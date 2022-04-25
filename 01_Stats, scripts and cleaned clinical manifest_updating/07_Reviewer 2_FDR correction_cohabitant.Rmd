@@ -1,0 +1,56 @@
+---
+title: "07_Reviewer 2_FDR correction"
+subtitle: "AZM+SERPAT"
+author: "Yiming Wang"
+date: 26/11/2021
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+```{r library package and import data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+pacman::p_load(
+  dplyr,
+  tidyverse,
+  readxl,
+  kableExtra,
+  stats,
+  openxlsx)
+
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Windows
+# setwd("/Volumes/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Mac
+
+df_pvalue <- read_excel("FDR correction_Cohabitant.xlsx")
+```
+
+# FDR correction
+## Cohabitant
+```{r Cohabitant, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+
+test_order_pvalue = df_pvalue[order(df_pvalue$P_value),]
+
+test_order_pvalue$FDR =
+  p.adjust(test_order_pvalue$P_value,
+           method = "fdr")
+```
+
+
+
+# Export to excel
+```{r export to excel, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+wb <- loadWorkbook("FDR correction_cohabitant.xlsx")
+
+writeData(wb, test_order_pvalue, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 5) 
+
+saveWorkbook(wb, paste0("FDR correction outcome_cohabitant_",format(Sys.Date(),format="%d%m%y"),".xlsx"), overwrite = TRUE) # write the excel sheet to the folder
+
+```
+
+

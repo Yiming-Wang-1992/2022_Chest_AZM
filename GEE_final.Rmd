@@ -1,0 +1,1738 @@
+---
+title: "Gee model"
+subtitle: "Resistance data"
+author: "Yiming Wang"
+date: 08/12/2021
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Learning material and Required packages
+## Learning material
+```{r learning, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+ # https://data.library.virginia.edu/getting-started-with-generalized-estimating-equations/
+ # https://stats.idre.ucla.edu/r/dae/logit-regression/ ## Odds ratio
+ # https://stackoverflow.com/questions/11461382/error-in-fitting-a-model-with-gee-na-nan-inf-in-foreign-function-call-arg-3 ## error 
+ # https://stat.ethz.ch/pipermail/r-help/2006-April/103372.html ## P-value
+ # https://sakai.unc.edu/access/content/group/2842013b-58f5-4453-aa8d-3e01bacbfc3d/public/Ecol562_Spring2012/docs/lectures/lecture23.htm ## correlation structure
+  ## The last argument, corstr, allows us to specify the correlation structure within groups (id).
+    ### "independence": the observations within the groups are uncorrelated.Apparently, samples within the id are independent, so choose this one
+    ### "exchangeable": each pair of observations in a group has the same correlation.
+    ### "unstructured": each pair of observations in a group is allowed to have a different correlation.
+    ### "AR-M": this is used to fit an autoregressive structure. To obtain a specific autoregressive structure requires the additional argument Mv. For example corstr="AR-M", Mv=1 yields an AR(1) structure, while corstr="AR-M", Mv=2 yields an AR(2) structure.
+    ### "non_stat_M_dep": stands for nonstationary M-dependent and generates a banded correlation matrix. It also requires the Mv argument to denote the number of nonzero off-diagonal bands that are to be estimated. Like "AR-M", "non_stat_M_dep" assumes there is a natural order to the data. Like "unstructured", "non_stat_M_dep" allows the entries within the each nonzero band to be different. As an example corstr="non_stat_M_dep", Mv=1 would correspond to the following correlation matrix for a group of size 4. Here α, β, and γ are parameters that need to be estimated.
+```
+
+
+## Load Packages
+```{r Load packages, echo=TRUE,message=FALSE, warning=FALSE}
+pacman::p_load(
+  readxl,
+  dplyr,
+  data.table,
+  writexl,
+  gee
+)
+```
+
+# Import and shape data
+## Import data to R
+```{r Import data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+
+# setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") #Windows
+setwd("/Volumes/Yiming Wang/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") #Mac
+data_all <- read_excel("transmission coding_GEE_final.xlsx")
+
+```
+
+## Shape data to factor
+```{r Shape data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+head(data_all)
+# Convert the data to factor
+cols <- c("ID", "Sample_ID","Group_ID","ermA","ermB","ermC","ermF","mef","msrA","msrE","tetM","tetO","tetW","PermA","PermB","PermC","PermF","Pmef","PmsrA","PmsrE","PtetM","PtetO","PtetW")
+data_shape <- lapply(data_all[cols], as.factor) %>% data.frame()
+
+data_shape$ID <-as.numeric(data_shape$ID)
+
+
+# Select data you wanted from the whole data table
+data_Macrolide <- data_shape %>% 
+  filter(Group_ID == 1)
+data_Nonmacrolide <- data_shape %>% 
+  filter(Group_ID == 0)
+
+# filter 0-0 case for transmission risk
+data_filter_both_negative <- data_shape %>% 
+  mutate(transmission_ermA = ifelse(PermA == 1 & ermA == 1, "1",
+                                    ifelse(PermA == 1 & ermA == 0, "0",
+                                           ifelse (PermA == 0 & ermA == 1, "0", "ditch")))) %>% 
+  mutate(transmission_ermB = ifelse(PermB == 1 & ermB == 1, "1",
+                                    ifelse(PermB == 1 & ermB == 0, "0",
+                                           ifelse (PermB == 0 & ermB == 1, "0", "ditch")))) %>% 
+  mutate(transmission_ermC = ifelse(PermC == 1 & ermC == 1, "1",
+                                    ifelse(PermC == 1 & ermC == 0, "0",
+                                           ifelse (PermC == 0 & ermC == 1, "0", "ditch")))) %>% 
+  mutate(transmission_ermF = ifelse(PermF == 1 & ermF == 1, "1",
+                                    ifelse(PermF == 1 & ermF == 0, "0",
+                                           ifelse (PermF == 0 & ermF == 1, "0", "ditch")))) %>% 
+  mutate(transmission_mef = ifelse(Pmef == 1 & mef == 1, "1",
+                                   ifelse(Pmef == 1 & mef == 0, "0",
+                                           ifelse (Pmef == 0 & mef == 1, "0", "ditch")))) %>% 
+  mutate(transmission_msrA = ifelse(PmsrA == 1 & msrA == 1, "1",
+                                    ifelse(PmsrA == 1 & msrA == 0, "0",
+                                           ifelse (PmsrA == 0 & msrA == 1, "0", "ditch")))) %>% 
+  mutate(transmission_msrE = ifelse(PmsrE == 1 & msrE == 1, "1",
+                                    ifelse(PmsrE == 1 & msrE == 0, "0",
+                                           ifelse (PmsrE == 0 & msrE == 1, "0", "ditch")))) %>% 
+  mutate(transmission_tetM = ifelse(PtetM == 1 & tetM == 1, "1",
+                                    ifelse(PtetM == 1 & tetM == 0, "0",
+                                           ifelse (PtetM==0 & tetM == 1, "0", "ditch")))) %>% 
+  mutate(transmission_tetO = ifelse(PtetO == 1 & tetO == 1, "1",
+                                    ifelse(PtetO == 1 & tetO == 0, "0",
+                                           ifelse (PtetO == 0 & tetO == 1, "0", "ditch")))) %>% 
+  mutate(transmission_tetW = ifelse(PtetW == 1 & tetW == 1, "1",
+                                    ifelse(PtetW == 1 & tetW == 0, "0",
+                                           ifelse (PtetW == 0 & tetW == 1, "0", "ditch"))))
+
+cols <- c("ID", "Sample_ID","Group_ID","transmission_ermA","transmission_ermB","transmission_ermC","transmission_ermF","transmission_mef","transmission_msrA","transmission_msrE","transmission_tetM","transmission_tetO","transmission_tetW")
+data_filter_both_negative <- lapply(data_filter_both_negative[cols], as.factor) %>% data.frame()
+
+
+```
+
+# GEE_patient effect_macrolide group
+## ermA gene
+```{r ermA-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+ermA_gee <- gee(ermA ~ PermA,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermA_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermA <- 2 * pnorm(abs(coef(summary(ermA_gee))[,5]), lower.tail = FALSE)
+P_ermA
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermA_gee))
+coef
+
+coef_PermA <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermA <- coef[2,4]
+se_PermA
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermA)
+
+## 95% CI
+exp(coef(ermA_gee)["PermA1"]+c(-1,1)*se_PermA*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermA_gee)["PermA1"], coef(ermA_gee)["PermA1"]+c(-1,1)*se_PermA*qnorm(0.975)))
+
+```
+
+## ermB gene
+```{r ermB-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+ermB_gee <- gee(ermB ~ PermB,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermB_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermB <- 2 * pnorm(abs(coef(summary(ermB_gee))[,5]), lower.tail = FALSE)
+P_ermB
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermB_gee))
+coef
+
+coef_PermB <- coef[2,1]
+coef_PermB
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermB <- coef[2,4]
+se_PermB
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermB)
+
+## 95% CI
+exp(coef(ermB_gee)["PermB1"]+c(-1,1)*se_PermB*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermB_gee)["PermB1"], coef(ermB_gee)["PermB1"]+c(-1,1)*se_PermB*qnorm(0.975)))
+```
+
+## ermC gene
+```{r ermC-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+ermC_gee <- gee(ermC ~ PermC,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermC_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermC <- 2 * pnorm(abs(coef(summary(ermC_gee))[,5]), lower.tail = FALSE)
+P_ermC
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermC_gee))
+coef
+
+coef_PermC <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermC <- coef[2,4]
+se_PermC
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermC)
+
+## 95% CI
+exp(coef(ermC_gee)["PermC1"]+c(-1,1)*se_PermC*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermC_gee)["PermC1"], coef(ermC_gee)["PermC1"]+c(-1,1)*se_PermC*qnorm(0.975)))
+
+```
+
+## ermF gene
+```{r ermF-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+ermF_gee <- gee(ermF ~ PermF,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermF_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermF <- 2 * pnorm(abs(coef(summary(ermF_gee))[,5]), lower.tail = FALSE)
+P_ermF
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermF_gee))
+coef
+
+coef_PermF <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermF <- coef[2,4]
+se_PermF
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermF)
+
+## 95% CI
+exp(coef(ermF_gee)["PermF1"]+c(-1,1)*se_PermF*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermF_gee)["PermF1"], coef(ermF_gee)["PermF1"]+c(-1,1)*se_PermF*qnorm(0.975)))
+```
+
+## mef gene
+```{r mef-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+mef_gee <- gee(mef ~ Pmef,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(mef_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_mef <- 2 * pnorm(abs(coef(summary(mef_gee))[,5]), lower.tail = FALSE)
+P_mef
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(mef_gee))
+coef
+
+coef_Pmef <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_Pmef <- coef[2,4]
+se_Pmef
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_Pmef)
+
+## 95% CI
+exp(coef(mef_gee)["Pmef1"]+c(-1,1)*se_Pmef*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(mef_gee)["Pmef1"], coef(mef_gee)["Pmef1"]+c(-1,1)*se_Pmef*qnorm(0.975)))
+
+```
+
+
+## msrA gene
+```{r msrA-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+msrA_gee <- gee(msrA ~ PmsrA,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(msrA_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_msrA <- 2 * pnorm(abs(coef(summary(msrA_gee))[,5]), lower.tail = FALSE)
+P_msrA
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(msrA_gee))
+coef
+
+coef_PmsrA <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PmsrA <- coef[2,4]
+se_PmsrA
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PmsrA)
+
+## 95% CI
+exp(coef(msrA_gee)["PmsrA1"]+c(-1,1)*se_PmsrA*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(msrA_gee)["PmsrA1"], coef(msrA_gee)["PmsrA1"]+c(-1,1)*se_PmsrA*qnorm(0.975)))
+```
+
+## msrE gene
+```{r msrE-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+msrE_gee <- gee(msrE ~ PmsrE,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(msrE_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_msrE <- 2 * pnorm(abs(coef(summary(msrE_gee))[,5]), lower.tail = FALSE)
+P_msrE
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(msrE_gee))
+coef
+
+coef_PmsrE <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PmsrE <- coef[2,4]
+se_PmsrE
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PmsrE)
+
+## 95% CI
+exp(coef(msrE_gee)["PmsrE1"]+c(-1,1)*se_PmsrE*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(msrE_gee)["PmsrE1"], coef(msrE_gee)["PmsrE1"]+c(-1,1)*se_PmsrE*qnorm(0.975)))
+```
+
+## tetM gene
+```{r tetM-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+tetM_gee <- gee(tetM ~ PtetM,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(tetM_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetM <- 2 * pnorm(abs(coef(summary(tetM_gee))[,5]), lower.tail = FALSE)
+P_tetM
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetM_gee))
+coef
+
+coef_PtetM <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetM <- coef[2,4]
+se_PtetM
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetM)
+
+## 95% CI
+exp(coef(tetM_gee)["PtetM1"]+c(-1,1)*se_PtetM*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetM_gee)["PtetM1"], coef(tetM_gee)["PtetM1"]+c(-1,1)*se_PtetM*qnorm(0.975)))
+```
+
+## tetO gene
+```{r tetO-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+tetO_gee <- gee(tetO ~ PtetO,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(tetO_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetO <- 2 * pnorm(abs(coef(summary(tetO_gee))[,5]), lower.tail = FALSE)
+P_tetO
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetO_gee))
+coef
+
+coef_PtetO <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetO <- coef[2,4]
+se_PtetO
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetO)
+
+## 95% CI
+exp(coef(tetO_gee)["PtetO1"]+c(-1,1)*se_PtetO*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetO_gee)["PtetO1"], coef(tetO_gee)["PtetO1"]+c(-1,1)*se_PtetO*qnorm(0.975)))
+```
+
+
+## tetW gene
+```{r tetW-M, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+tetW_gee <- gee(tetW ~ PtetW,
+                data = data_Macrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(tetW_gee)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetW <- 2 * pnorm(abs(coef(summary(tetW_gee))[,5]), lower.tail = FALSE)
+P_tetW
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetW_gee))
+coef
+
+coef_PtetW <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetW <- coef[2,4]
+se_PtetW
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetW)
+
+## 95% CI
+exp(coef(tetW_gee)["PtetW1"]+c(-1,1)*se_PtetW*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetW_gee)["PtetW1"], coef(tetW_gee)["PtetW1"]+c(-1,1)*se_PtetW*qnorm(0.975)))
+```
+
+
+# GEE_patient effect_non-macrolide group
+## ermA gene
+```{r ermA-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+ermA_gee_NM <- gee(ermA ~ PermA,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermA_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermA <- 2 * pnorm(abs(coef(summary(ermA_gee_NM))[,5]), lower.tail = FALSE)
+P_ermA
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermA_gee_NM))
+coef
+
+coef_PermA <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermA <- coef[2,4]
+se_PermA
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermA)
+
+## 95% CI
+exp(coef(ermA_gee_NM)["PermA1"]+c(-1,1)*se_PermA*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermA_gee_NM)["PermA1"], coef(ermA_gee_NM)["PermA1"]+c(-1,1)*se_PermA*qnorm(0.975)))
+
+```
+
+## ermB gene
+```{r ermB-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+ermB_gee_NM <- gee(ermB ~ PermB,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermB_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermB <- 2 * pnorm(abs(coef(summary(ermB_gee_NM))[,5]), lower.tail = FALSE)
+P_ermB
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermB_gee_NM))
+coef
+
+coef_PermB <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermB <- coef[2,4]
+se_PermB
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermB)
+
+## 95% CI
+exp(coef(ermB_gee_NM)["PermB1"]+c(-1,1)*se_PermB*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermB_gee_NM)["PermB1"], coef(ermB_gee_NM)["PermB1"]+c(-1,1)*se_PermB*qnorm(0.975)))
+```
+
+## ermC gene
+```{r ermC-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+ermC_gee_NM <- gee(ermC ~ PermC,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermC_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermC <- 2 * pnorm(abs(coef(summary(ermC_gee_NM))[,5]), lower.tail = FALSE)
+P_ermC
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermC_gee_NM))
+coef
+
+coef_PermC <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermC <- coef[2,4]
+se_PermC
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermC)
+
+## 95% CI
+exp(coef(ermC_gee_NM)["PermC1"]+c(-1,1)*se_PermC*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermC_gee_NM)["PermC1"], coef(ermC_gee_NM)["PermC1"]+c(-1,1)*se_PermC*qnorm(0.975)))
+
+```
+
+## ermF gene
+```{r ermF-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+ermF_gee_NM <- gee(ermF ~ PermF,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermF_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermF <- 2 * pnorm(abs(coef(summary(ermF_gee_NM))[,5]), lower.tail = FALSE)
+P_ermF
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermF_gee_NM))
+coef
+
+coef_PermF <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermF <- coef[2,4]
+se_PermF
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermF)
+
+## 95% CI
+exp(coef(ermF_gee_NM)["PermF1"]+c(-1,1)*se_PermF*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermF_gee_NM)["PermF1"], coef(ermF_gee_NM)["PermF1"]+c(-1,1)*se_PermF*qnorm(0.975)))
+```
+
+## mef gene
+```{r mef-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+mef_gee_NM <- gee(mef ~ Pmef,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(mef_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_mef <- 2 * pnorm(abs(coef(summary(mef_gee_NM))[,5]), lower.tail = FALSE)
+P_mef
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(mef_gee_NM))
+coef
+
+coef_Pmef <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_Pmef <- coef[2,4]
+se_Pmef
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_Pmef)
+
+## 95% CI
+exp(coef(mef_gee_NM)["Pmef1"]+c(-1,1)*se_Pmef*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(mef_gee_NM)["Pmef1"], coef(mef_gee_NM)["Pmef1"]+c(-1,1)*se_Pmef*qnorm(0.975)))
+
+```
+
+
+## msrA gene
+```{r msrA-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+msrA_gee_NM <- gee(msrA ~ PmsrA,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(msrA_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_msrA <- 2 * pnorm(abs(coef(summary(msrA_gee_NM))[,5]), lower.tail = FALSE)
+P_msrA
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(msrA_gee_NM))
+coef
+
+coef_PmsrA <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PmsrA <- coef[2,4]
+se_PmsrA
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PmsrA)
+
+## 95% CI
+exp(coef(msrA_gee_NM)["PmsrA1"]+c(-1,1)*se_PmsrA*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(msrA_gee_NM)["PmsrA1"], coef(msrA_gee_NM)["PmsrA1"]+c(-1,1)*se_PmsrA*qnorm(0.975)))
+```
+
+## msrE gene
+```{r msrE-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+msrE_gee_NM <- gee(msrE ~ PmsrE,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(msrE_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_msrE <- 2 * pnorm(abs(coef(summary(msrE_gee_NM))[,5]), lower.tail = FALSE)
+P_msrE
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(msrE_gee_NM))
+coef
+
+coef_PmsrE <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PmsrE <- coef[2,4]
+se_PmsrE
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PmsrE)
+
+## 95% CI
+exp(coef(msrE_gee_NM)["PmsrE1"]+c(-1,1)*se_PmsrE*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(msrE_gee_NM)["PmsrE1"], coef(msrE_gee_NM)["PmsrE1"]+c(-1,1)*se_PmsrE*qnorm(0.975)))
+```
+
+## tetM gene
+```{r tetM-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+tetM_gee_NM <- gee(tetM ~ PtetM,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(tetM_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetM <- 2 * pnorm(abs(coef(summary(tetM_gee_NM))[,5]), lower.tail = FALSE)
+P_tetM
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetM_gee_NM))
+coef
+
+coef_PtetM <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetM <- coef[2,4]
+se_PtetM
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetM)
+
+## 95% CI
+exp(coef(tetM_gee_NM)["PtetM1"]+c(-1,1)*se_PtetM*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetM_gee_NM)["PtetM1"], coef(tetM_gee_NM)["PtetM1"]+c(-1,1)*se_PtetM*qnorm(0.975)))
+```
+
+## tetO gene
+```{r tetO-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+tetO_gee_NM <- gee(tetO ~ PtetO,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(tetO_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetO <- 2 * pnorm(abs(coef(summary(tetO_gee_NM))[,5]), lower.tail = FALSE)
+P_tetO
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetO_gee_NM))
+coef
+
+coef_PtetO <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetO <- coef[2,4]
+se_PtetO
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetO)
+
+## 95% CI
+exp(coef(tetO_gee_NM)["PtetO1"]+c(-1,1)*se_PtetO*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetO_gee_NM)["PtetO1"], coef(tetO_gee_NM)["PtetO1"]+c(-1,1)*se_PtetO*qnorm(0.975)))
+```
+
+
+## tetW gene
+```{r tetW-NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+tetW_gee_NM <- gee(tetW ~ PtetW,
+                data = data_Nonmacrolide, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(tetW_gee_NM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetW <- 2 * pnorm(abs(coef(summary(tetW_gee_NM))[,5]), lower.tail = FALSE)
+P_tetW
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetW_gee_NM))
+coef
+
+coef_PtetW <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetW <- coef[2,4]
+se_PtetW
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetW)
+
+## 95% CI
+exp(coef(tetW_gee_NM)["PtetW1"]+c(-1,1)*se_PtetW*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetW_gee_NM)["PtetW1"], coef(tetW_gee_NM)["PtetW1"]+c(-1,1)*se_PtetW*qnorm(0.975)))
+```
+
+
+# GEE_macrolide effect on carriage in close contacts - 0-0 case is excluded
+## ermA gene
+```{r ermA-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_shape_ermA <- data_shape %>% 
+  mutate(pair_ermA = paste(ermA,PermA,sep = "_")) %>% 
+  filter (pair_ermA != "0_0")
+
+ermA_gee_MvsNM <- gee(ermA ~ Group_ID,
+                data = data_shape_ermA, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermA_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermA <- 2 * pnorm(abs(coef(summary(ermA_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_ermA
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermA_gee_MvsNM))
+coef
+
+coef_PermA <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermA <- coef[2,4]
+se_PermA
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermA)
+
+## 95% CI
+exp(coef(ermA_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PermA*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermA_gee_MvsNM)["Group_ID1"], coef(ermA_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PermA*qnorm(0.975)))
+
+```
+
+## ermB gene
+```{r ermB-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_shape_ermB <- data_shape %>% 
+  mutate(pair_ermB = paste(ermB,PermB,sep = "_")) %>% 
+  filter (pair_ermB != "0_0")
+
+ermB_gee_MvsNM <- gee(ermB ~ Group_ID,
+                data = data_shape_ermB, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermB_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermB <- 2 * pnorm(abs(coef(summary(ermB_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_ermB
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermB_gee_MvsNM))
+coef
+
+coef_PermB <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermB <- coef[2,4]
+se_PermB
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermB)
+
+## 95% CI
+exp(coef(ermB_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PermB*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermB_gee_MvsNM)["Group_ID1"], coef(ermB_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PermB*qnorm(0.975)))
+```
+
+## ermC gene
+```{r ermC-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_shape_ermC <- data_shape %>% 
+  mutate(pair_ermC = paste(ermC,PermC,sep = "_")) %>% 
+  filter (pair_ermC != "0_0")
+
+ermC_gee_MvsNM <- gee(ermC ~ Group_ID,
+                data = data_shape_ermC, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermC_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermC <- 2 * pnorm(abs(coef(summary(ermC_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_ermC
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermC_gee_MvsNM))
+coef
+
+coef_PermC <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermC <- coef[2,4]
+se_PermC
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermC)
+
+## 95% CI
+exp(coef(ermC_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PermC*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermC_gee_MvsNM)["Group_ID1"], coef(ermC_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PermC*qnorm(0.975)))
+
+```
+
+## ermF gene
+```{r ermF-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_shape_ermF <- data_shape %>% 
+  mutate(pair_ermF = paste(ermF,PermF,sep = "_")) %>% 
+  filter (pair_ermF != "0_0")
+
+ermF_gee_MvsNM <- gee(ermF ~ Group_ID,
+                data = data_shape_ermF, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermF_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermF <- 2 * pnorm(abs(coef(summary(ermF_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_ermF
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermF_gee_MvsNM))
+coef
+
+coef_PermF <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermF <- coef[2,4]
+se_PermF
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermF)
+
+## 95% CI
+exp(coef(ermF_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PermF*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermF_gee_MvsNM)["Group_ID1"], coef(ermF_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PermF*qnorm(0.975)))
+```
+
+## mef gene
+```{r mef-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_shape_mef <- data_shape %>% 
+  mutate(pair_mef = paste(mef,Pmef,sep = "_")) %>% 
+  filter (pair_mef != "0_0")
+
+mef_gee_MvsNM <- gee(mef ~ Group_ID,
+                data = data_shape_mef, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(mef_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_mef <- 2 * pnorm(abs(coef(summary(mef_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_mef
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(mef_gee_MvsNM))
+coef
+
+coef_Pmef <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_Pmef <- coef[2,4]
+se_Pmef
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_Pmef)
+
+## 95% CI
+exp(coef(mef_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_Pmef*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(mef_gee_MvsNM)["Group_ID1"], coef(mef_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_Pmef*qnorm(0.975)))
+
+```
+
+
+## msrA gene
+```{r msrA-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_shape_msrA <- data_shape %>% 
+  mutate(pair_msrA = paste(msrA,PmsrA,sep = "_")) %>% 
+  filter (pair_msrA != "0_0")
+
+msrA_gee_MvsNM <- gee(msrA ~ Group_ID,
+                data = data_shape_msrA , 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(msrA_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_msrA <- 2 * pnorm(abs(coef(summary(msrA_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_msrA
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(msrA_gee_MvsNM))
+coef
+
+coef_PmsrA <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PmsrA <- coef[2,4]
+se_PmsrA
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PmsrA)
+
+## 95% CI
+exp(coef(msrA_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PmsrA*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(msrA_gee_MvsNM)["Group_ID1"], coef(msrA_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PmsrA*qnorm(0.975)))
+```
+
+## msrE gene
+```{r msrE-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_shape_msrE <- data_shape %>% 
+  mutate(pair_msrE = paste(msrE,PmsrE,sep = "_")) %>% 
+  filter (pair_msrE != "0_0")
+
+msrE_gee_MvsNM <- gee(msrE ~ Group_ID,
+                data = data_shape_msrE, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(msrE_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_msrE <- 2 * pnorm(abs(coef(summary(msrE_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_msrE
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(msrE_gee_MvsNM))
+coef
+
+coef_PmsrE <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PmsrE <- coef[2,4]
+se_PmsrE
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PmsrE)
+
+## 95% CI
+exp(coef(msrE_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PmsrE*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(msrE_gee_MvsNM)["Group_ID1"], coef(msrE_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PmsrE*qnorm(0.975)))
+```
+
+## tetM gene
+```{r tetM-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_shape_tetM <- data_shape %>% 
+  mutate(pair_tetM = paste(tetM,PtetM,sep = "_")) %>% 
+  filter (pair_tetM != "0_0")
+
+tetM_gee_MvsNM <- gee(tetM ~ Group_ID,
+                data = data_shape_tetM, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(tetM_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetM <- 2 * pnorm(abs(coef(summary(tetM_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_tetM
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetM_gee_MvsNM))
+coef
+
+coef_PtetM <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetM <- coef[2,4]
+se_PtetM
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetM)
+
+## 95% CI
+exp(coef(tetM_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PtetM*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetM_gee_MvsNM)["Group_ID1"], coef(tetM_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PtetM*qnorm(0.975)))
+```
+
+## tetO gene
+```{r tetO-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_shape_tetO <- data_shape %>% 
+  mutate(pair_tetO = paste(tetO,PtetO,sep = "_")) %>% 
+  filter (pair_tetO != "0_0")
+
+tetO_gee_MvsNM <- gee(tetO ~ Group_ID,
+                data = data_shape_tetO, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(tetO_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetO <- 2 * pnorm(abs(coef(summary(tetO_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_tetO
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetO_gee_MvsNM))
+coef
+
+coef_PtetO <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetO <- coef[2,4]
+se_PtetO
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetO)
+
+## 95% CI
+exp(coef(tetO_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PtetO*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetO_gee_MvsNM)["Group_ID1"], coef(tetO_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PtetO*qnorm(0.975)))
+```
+
+
+## tetW gene
+```{r tetW-M vs NM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+data_shape_tetW <- data_shape %>% 
+  mutate(pair_tetW = paste(tetW,PtetW,sep = "_")) %>% 
+  filter (pair_tetW != "0_0")
+
+tetW_gee_MvsNM <- gee(tetW ~ Group_ID,
+                data = data_shape_tetW, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(tetW_gee_MvsNM)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetW <- 2 * pnorm(abs(coef(summary(tetW_gee_MvsNM))[,5]), lower.tail = FALSE)
+P_tetW
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetW_gee_MvsNM))
+coef
+
+coef_PtetW <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetW <- coef[2,4]
+se_PtetW
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetW)
+
+## 95% CI
+exp(coef(tetW_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PtetW*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetW_gee_MvsNM)["Group_ID1"], coef(tetW_gee_MvsNM)["Group_ID1"]+c(-1,1)*se_PtetW*qnorm(0.975)))
+```
+
+
+
+# GEE_macrolide effect on transmission risk (0-0 was excluded)
+## ermA gene
+```{r ermA-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+
+data_filter_both_negative_ermA <- data_filter_both_negative %>% 
+  filter(transmission_ermA == "1" | transmission_ermA == "0")
+
+ermA_gee_MvsNM_T <- gee(transmission_ermA ~ Group_ID,
+                data = data_filter_both_negative_ermA, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+# Summarize the model
+summary(ermA_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermA <- 2 * pnorm(abs(coef(summary(ermA_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_ermA
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermA_gee_MvsNM_T))
+coef
+
+coef_PermA <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermA <- coef[2,4]
+se_PermA
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermA)
+
+## 95% CI
+exp(coef(ermA_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PermA*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermA_gee_MvsNM_T)["Group_ID1"], coef(ermA_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PermA*qnorm(0.975)))
+
+```
+
+## ermB gene
+```{r ermB-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+
+data_filter_both_negative_ermB <- data_filter_both_negative %>% 
+  filter(transmission_ermB == "1" | transmission_ermB == "0")
+
+ermB_gee_MvsNM_T <- gee(transmission_ermB ~ Group_ID,
+                data = data_filter_both_negative_ermB, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+
+# Summarize the model
+summary(ermB_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermB <- 2 * pnorm(abs(coef(summary(ermB_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_ermB
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermB_gee_MvsNM_T))
+coef
+
+coef_PermB <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermB <- coef[2,4]
+se_PermB
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermB)
+
+## 95% CI
+exp(coef(ermB_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PermB*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermB_gee_MvsNM_T)["Group_ID1"], coef(ermB_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PermB*qnorm(0.975)))
+```
+
+## ermC gene
+```{r ermC-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_filter_both_negative_ermC <- data_filter_both_negative %>% 
+  filter(transmission_ermC == "1" | transmission_ermC == "0")
+
+ermC_gee_MvsNM_T <- gee(transmission_ermC ~ Group_ID,
+                data = data_filter_both_negative_ermC, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+
+# Summarize the model
+summary(ermC_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermC <- 2 * pnorm(abs(coef(summary(ermC_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_ermC
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermC_gee_MvsNM_T))
+coef
+
+coef_PermC <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermC <- coef[2,4]
+se_PermC
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermC)
+
+## 95% CI
+exp(coef(ermC_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PermC*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermC_gee_MvsNM_T)["Group_ID1"], coef(ermC_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PermC*qnorm(0.975)))
+
+```
+
+## ermF gene
+```{r ermF-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_filter_both_negative_ermF <- data_filter_both_negative %>% 
+  filter(transmission_ermF == "1" | transmission_ermF == "0")
+
+ermF_gee_MvsNM_T <- gee(transmission_ermF ~ Group_ID,
+                data = data_filter_both_negative_ermF, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+
+# Summarize the model
+summary(ermF_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_ermF <- 2 * pnorm(abs(coef(summary(ermF_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_ermF
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(ermF_gee_MvsNM_T))
+coef
+
+coef_PermF <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PermF <- coef[2,4]
+se_PermF
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PermF)
+
+## 95% CI
+exp(coef(ermF_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PermF*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(ermF_gee_MvsNM_T)["Group_ID1"], coef(ermF_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PermF*qnorm(0.975)))
+```
+
+## mef gene
+```{r mef-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_filter_both_negative_mef <- data_filter_both_negative %>% 
+  filter(transmission_mef == "1" | transmission_mef == "0")
+
+mef_gee_MvsNM_T <- gee(transmission_mef ~ Group_ID,
+                data = data_filter_both_negative_mef, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+
+# Summarize the model
+summary(mef_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_mef <- 2 * pnorm(abs(coef(summary(mef_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_mef
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(mef_gee_MvsNM_T))
+coef
+
+coef_Pmef <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_Pmef <- coef[2,4]
+se_Pmef
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_Pmef)
+
+## 95% CI
+exp(coef(mef_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_Pmef*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(mef_gee_MvsNM_T)["Group_ID1"], coef(mef_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_Pmef*qnorm(0.975)))
+
+```
+
+
+## msrA gene
+```{r msrA-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_filter_both_negative_msrA <- data_filter_both_negative %>% 
+  filter(transmission_msrA == "1" | transmission_msrA == "0")
+
+msrA_gee_MvsNM_T <- gee(transmission_msrA ~ Group_ID,
+                data = data_filter_both_negative_msrA, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+
+# Summarize the model
+summary(msrA_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_msrA <- 2 * pnorm(abs(coef(summary(msrA_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_msrA
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(msrA_gee_MvsNM_T))
+coef
+
+coef_PmsrA <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PmsrA <- coef[2,4]
+se_PmsrA
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PmsrA)
+
+## 95% CI
+exp(coef(msrA_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PmsrA*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(msrA_gee_MvsNM_T)["Group_ID1"], coef(msrA_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PmsrA*qnorm(0.975)))
+```
+
+## msrE gene
+```{r msrE-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_filter_both_negative_msrE <- data_filter_both_negative %>% 
+  filter(transmission_msrE == "1" | transmission_msrE == "0")
+
+msrE_gee_MvsNM_T <- gee(transmission_msrE ~ Group_ID,
+                data = data_filter_both_negative_msrE, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+
+# Summarize the model
+summary(msrE_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_msrE <- 2 * pnorm(abs(coef(summary(msrE_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_msrE
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(msrE_gee_MvsNM_T))
+coef
+
+coef_PmsrE <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PmsrE <- coef[2,4]
+se_PmsrE
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PmsrE)
+
+## 95% CI
+exp(coef(msrE_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PmsrE*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(msrE_gee_MvsNM_T)["Group_ID1"], coef(msrE_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PmsrE*qnorm(0.975)))
+```
+
+## tetM gene
+```{r tetM-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_filter_both_negative_tetM <- data_filter_both_negative %>% 
+  filter(transmission_tetM == "1" | transmission_tetM == "0")
+
+tetM_gee_MvsNM_T <- gee(transmission_tetM ~ Group_ID,
+                data = data_filter_both_negative_tetM, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+
+# Summarize the model
+summary(tetM_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetM <- 2 * pnorm(abs(coef(summary(tetM_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_tetM
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetM_gee_MvsNM_T))
+coef
+
+coef_PtetM <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetM <- coef[2,4]
+se_PtetM
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetM)
+
+## 95% CI
+exp(coef(tetM_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PtetM*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetM_gee_MvsNM_T)["Group_ID1"], coef(tetM_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PtetM*qnorm(0.975)))
+```
+
+## tetO gene
+```{r tetO-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+## Corstr choose independence here as the correlation structure within groups (id) is independent
+data_filter_both_negative_tetO <- data_filter_both_negative %>% 
+  filter(transmission_tetO == "1" | transmission_tetO == "0")
+
+tetO_gee_MvsNM_T <- gee(transmission_tetO ~ Group_ID,
+                data = data_filter_both_negative_tetO, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+
+# Summarize the model
+summary(tetO_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetO <- 2 * pnorm(abs(coef(summary(tetO_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_tetO
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetO_gee_MvsNM_T))
+coef
+
+coef_PtetO <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetO <- coef[2,4]
+se_PtetO
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetO)
+
+## 95% CI
+exp(coef(tetO_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PtetO*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetO_gee_MvsNM_T)["Group_ID1"], coef(tetO_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PtetO*qnorm(0.975)))
+```
+
+
+## tetW gene
+```{r tetW-M vs NM-transmission, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE}
+# Run GEE model
+## ID here has to be a number and need to convert to numeric value as the id argument specifies the grouping factor. In this case it’s the “id” column in the data frame.
+data_filter_both_negative_tetW <- data_filter_both_negative %>% 
+  filter(transmission_tetW == "1" | transmission_tetW == "0")
+
+tetW_gee_MvsNM_T <- gee(transmission_tetW ~ Group_ID,
+                data = data_filter_both_negative_tetW, 
+                id = ID, 
+                family = binomial,
+                corstr = "independence")
+
+# Summarize the model
+summary(tetW_gee_MvsNM_T)
+
+# Calculate the P vlaues using a normal approxiamtion for the distribution of z
+P_tetW <- 2 * pnorm(abs(coef(summary(tetW_gee_MvsNM_T))[,5]), lower.tail = FALSE)
+P_tetW
+
+# Extract the fixed-effect coefficients for odds ratio
+coef <- coef(summary(tetW_gee_MvsNM_T))
+coef
+
+coef_PtetW <- coef[2,1]
+
+# Extract Robust SE for yielding 95% CIs expressed on the odds scale
+se_PtetW <- coef[2,4]
+se_PtetW
+
+# odds ratios and 95% CI
+## odds ratio
+exp(coef_PtetW)
+
+## 95% CI
+exp(coef(tetW_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PtetW*qnorm(0.975))
+
+## combine odds ratio and 95% CI
+exp(cbind("Odds ratio" = coef(tetW_gee_MvsNM_T)["Group_ID1"], coef(tetW_gee_MvsNM_T)["Group_ID1"]+c(-1,1)*se_PtetW*qnorm(0.975)))
+```
+
+
+

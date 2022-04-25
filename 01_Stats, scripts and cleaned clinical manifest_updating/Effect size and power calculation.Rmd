@@ -1,0 +1,146 @@
+---
+title: "AZM_effect size of logistic regression and power calculation"
+subtitle: "Resistance data"
+author: "Yiming Wang"
+date: 07/12/2021
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load Packages
+```{r Load packages, echo=TRUE,message=FALSE, warning=FALSE}
+pacman::p_load(
+  readr,
+  readxl,
+  dplyr,
+  data.table,
+  writexl,
+  mlbench,
+  MASS,
+  pROC,
+  rms,
+  vcd,
+  effectsize,
+  WebPower
+)
+```
+
+# Import and shape data
+## Import data to R
+```{r Import data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") #Windows
+# setwd("/Volumes/Yiming Wang/My backup disk/Things currently working on/AZM+SERPAT/Final of the final/Data analysis") #Mac
+data_all <- read_excel("transmission coding.xlsx")
+
+```
+
+## Shape data to pairs
+```{r shape data to pairs, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Shape
+## 1-1 as transmission, 1-0. 0-1 as no transmission
+data_shape_situation1 <- data_all %>% 
+  mutate(transmission_ermA = ifelse(PermA == 1 & ermA == 1, "Yes",
+                                    ifelse(PermA == 1 & ermA == 0, "No",
+                                           ifelse (PermA == 0 & ermA == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermB = ifelse(PermB == 1 & ermB == 1, "Yes",
+                                    ifelse(PermB == 1 & ermB == 0, "No",
+                                           ifelse (PermB == 0 & ermB == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermC = ifelse(PermC == 1 & ermC == 1, "Yes",
+                                    ifelse(PermC == 1 & ermC == 0, "No",
+                                           ifelse (PermC == 0 & ermC == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermF = ifelse(PermF == 1 & ermF == 1, "Yes",
+                                    ifelse(PermF == 1 & ermF == 0, "No",
+                                           ifelse (PermF == 0 & ermF == 1, "No", "ditch")))) %>% 
+  mutate(transmission_mef = ifelse(Pmef == 1 & mef == 1, "Yes",
+                                   ifelse(Pmef == 1 & mef == 0, "No",
+                                           ifelse (Pmef == 0 & mef == 1, "No", "ditch")))) %>% 
+  mutate(transmission_msrA = ifelse(PmsrA == 1 & msrA == 1, "Yes",
+                                    ifelse(PmsrA == 1 & msrA == 0, "No",
+                                           ifelse (PmsrA == 0 & msrA == 1, "No", "ditch")))) %>% 
+  mutate(transmission_msrE = ifelse(PmsrE == 1 & msrE == 1, "Yes",
+                                    ifelse(PmsrE == 1 & msrE == 0, "No",
+                                           ifelse (PmsrE == 0 & msrE == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetM = ifelse(PtetM == 1 & tetM == 1, "Yes",
+                                    ifelse(PtetM == 1 & tetM == 0, "No",
+                                           ifelse (PtetM==0 & tetM == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetO = ifelse(PtetO == 1 & tetO == 1, "Yes",
+                                    ifelse(PtetO == 1 & tetO == 0, "No",
+                                           ifelse (PtetO == 0 & tetO == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetW = ifelse(PtetW == 1 & tetW == 1, "Yes",
+                                    ifelse(PtetW == 1 & tetW == 0, "No",
+                                           ifelse (PtetW == 0 & tetW == 1, "No", "ditch")))) %>% 
+  mutate(group = ifelse(Group_ID == "No_macrolide", "0","1"))
+```
+
+## Shape data to factor
+```{r shape data to factor, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Shape
+cols <- c("Sample_ID","Group_ID","ermA","ermB","ermC","ermF","mef","msrA","msrE","tetM","tetO","tetW","PermA","PermB","PermC","PermF","Pmef","PmsrA","PmsrE","PtetM","PtetO","PtetW", "transmission_ermA","transmission_ermB","transmission_ermC","transmission_ermF","transmission_mef","transmission_msrA","transmission_msrE","transmission_tetM","transmission_tetO","transmission_tetW", "group")
+data_shape_situation1_2 <- lapply(data_shape_situation1[cols], as.factor) %>% data.frame()
+```
+
+## mef gene - Macrolide group vs Non-macrolide group
+```{r mef, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~mef + Pmef, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_mef_situation1 <- data_shape_situation1_2[,c("group","transmission_mef")]
+
+# Filter out transmission=ditch
+data_mef_situation1_1 <- data_mef_situation1 %>% 
+  filter(transmission_mef=="Yes" | transmission_mef=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_mef, data = data_mef_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_mef_situation1 <-  glm(transmission_mef~.,family = binomial, data=data_mef_situation1_1)
+summary(logit_mef_situation1)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_mef_situation1)
+
+# Odds ratios with 95% CI
+OR <- exp(cbind("Odds ratio" = coef(logit_mef_situation1), confint.default(logit_mef_situation1, level = 0.95)))
+odds_ratio <- OR[2,1]
+
+# Effect size
+oddsratio_to_d(odds_ratio, log = FALSE)
+interpret_oddsratio(odds_ratio, rules = "cohen1988", log = FALSE)
+
+# Power calculation itself
+## Prob(Y=1|X=0): the probobility of observieng 1 for the outcome variable Y when the predictor X equals 0.
+### in our case P0 = 21/37=0.568
+## Prob(Y=1|X=1): the probobility of observieng 1 for the outcome variable Y when the predictor X equals 1.
+### in our case P1 = 29/43=0.674
+
+wp.logistic(n = NULL, p0 = 0.568, p1 = 0.674, alpha = 0.05,power = 0.8, alternative = c("greater"),family = c("normal"), parameter = NULL)
+
+# Power calculation adjusting for multiple tests (alpha/10=0.005)
+
+wp.logistic(n = NULL, p0 = 0.568, p1 = 0.674, alpha = 0.005,power = 0.8, alternative = c("greater"),family = c("normal"), parameter = NULL)
+
+```

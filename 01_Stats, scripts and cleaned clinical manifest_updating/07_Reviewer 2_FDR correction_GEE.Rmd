@@ -1,0 +1,71 @@
+---
+title: "Reviewer 4_FDR correction for GEE model"
+subtitle: "AZM+SERPAT"
+author: "Yiming Wang"
+date: 08/12/2021
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+```{r library package and import data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+pacman::p_load(
+  dplyr,
+  tidyverse,
+  readxl,
+  kableExtra,
+  stats,
+  openxlsx)
+
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Windows
+# setwd("/Volumes/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Mac
+
+df_pvalue <- read_excel("FDR correction_GEE.xlsx")
+```
+
+# FDR correction
+## Co-carriage
+```{r Cocarriage, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+df_Cocarriage <- df_pvalue %>% 
+  filter(Group == "Cocarriage")
+
+test_order_Cocarriage = df_Cocarriage[order(df_Cocarriage$P_value),]
+
+test_order_Cocarriage$FDR =
+  p.adjust(test_order_Cocarriage$P_value,
+           method = "fdr")
+```
+
+## Macrolide effect
+```{r Macrolide effect, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+df_Macrolide <- df_pvalue %>% 
+  filter(Group == "Macrolide")
+
+test_order_Macrolide = df_Macrolide[order(df_Macrolide$P_value),]
+
+test_order_Macrolide$FDR =
+  p.adjust(test_order_Macrolide$P_value,
+           method = "fdr")
+```
+
+
+# Export to excel
+```{r export to excel, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Windows
+wb <- loadWorkbook("FDR correction_GEE.xlsx")
+
+writeData(wb, test_order_Cocarriage, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 5) 
+writeData(wb, test_order_Macrolide, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 10) 
+
+saveWorkbook(wb, paste0("FDR correction outcome_GEE_",format(Sys.Date(),format="%d%m%y"),".xlsx"), overwrite = TRUE) # write the excel sheet to the folder
+
+```
+
+

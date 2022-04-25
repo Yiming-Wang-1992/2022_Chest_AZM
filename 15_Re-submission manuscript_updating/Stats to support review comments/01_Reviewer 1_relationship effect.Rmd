@@ -1,0 +1,1268 @@
+---
+title: "Analysis for reviewers' comments"
+subtitle: "AZM+SERPAT"
+author: "Yiming Wang"
+date: 25/11/2021
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+```{r library package and import data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+pacman::p_load(
+  dplyr,
+  tidyverse,
+  readxl,
+  kableExtra)
+
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Windows
+# setwd("/Volumes/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Mac
+
+df_relationship <- read_excel("Transmission coding_for reviewers.xlsx")
+```
+
+# Relationship
+## Relationship detail summary
+```{r relationship summary, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Summarize relationship
+## Overall
+df_relationship$Relationship <- as.factor(df_relationship$Relationship)
+
+df_relationship <- df_relationship %>% 
+  mutate(Relationship = ifelse(Relationship == 1, "Parent-child",
+                                    ifelse(Relationship == 2, "Sibling",
+                                           ifelse (Relationship == 3, "Partner", "Friend"))))
+
+df_relationship_summary <- df_relationship %>% 
+  group_by(Relationship) %>% 
+  summarise (n=n_distinct(`Sample_ID`)) %>%
+  mutate(n_total=nrow(df_relationship)) %>% 
+  mutate(p=round(n/n_total*100, digits =1))
+
+df_relationship_summary %>%  
+  kbl(caption = "Summary of relationship") %>% 
+  kable_classic(full_width = F, html_font ="Cambria")
+
+## Group
+### MR
+df_r_MR <- df_relationship %>% 
+  filter(Group == "Macrolide") 
+
+df_r_MR_summary <- df_r_MR %>% 
+  group_by(Relationship) %>% 
+  summarise (n=n_distinct(`Sample_ID`)) %>%
+  mutate(n_total=nrow(df_r_MR)) %>% 
+  mutate(p=round(n/n_total*100, digits =1))
+  
+df_r_MR_summary %>%  
+  kbl(caption = "Summary of relationship in MR group") %>% 
+  kable_classic(full_width = F, html_font ="Cambria")
+
+### NMR
+df_r_NMR <- df_relationship %>% 
+  filter(Group == "No_macrolide") 
+
+df_r_NMR_summary <- df_r_NMR %>% 
+  group_by(Relationship) %>% 
+  summarise (n=n_distinct(`Sample_ID`)) %>%
+  mutate(n_total=nrow(df_r_NMR)) %>% 
+  mutate(p=round(n/n_total*100, digits =1))
+  
+ df_r_NMR_summary %>%  
+  kbl(caption = "Summary of relationship in MR group") %>% 
+  kable_classic(full_width = F, html_font ="Cambria")
+
+```
+
+
+
+## Relationship effect on transmission risk of macrolide resistance genes 
+### shape data
+```{r shape data-different relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Load package
+pacman::p_load(
+  readr,
+  readxl,
+  dplyr,
+  data.table,
+  writexl,
+  mlbench,
+  MASS,
+  pROC,
+  rms,
+  vcd
+)
+
+# Shape data
+## Import data
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Windows
+data_all <- read_excel("Transmission coding_for reviewers.xlsx")
+
+data_all$Relationship <- as.factor(data_all$Relationship)
+
+data_all <- data_all %>% 
+  mutate(Relationship = ifelse(Relationship == 1, "Parent-child",
+                                    ifelse(Relationship == 2, "Sibling",
+                                           ifelse (Relationship == 3, "Partner", "Friend"))))
+
+## Remove the relationship sibling and friends
+data_all <- data_all %>% 
+  filter (Relationship == "Parent-child" | Relationship == "Partner")
+
+## 1-1 as transmission, 1-0. 0-1 as no transmission
+data_shape <- data_all %>% 
+  mutate(transmission_ermA = ifelse(PermA == 1 & ermA == 1, "Yes",
+                                    ifelse(PermA == 1 & ermA == 0, "No",
+                                           ifelse (PermA == 0 & ermA == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermB = ifelse(PermB == 1 & ermB == 1, "Yes",
+                                    ifelse(PermB == 1 & ermB == 0, "No",
+                                           ifelse (PermB == 0 & ermB == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermC = ifelse(PermC == 1 & ermC == 1, "Yes",
+                                    ifelse(PermC == 1 & ermC == 0, "No",
+                                           ifelse (PermC == 0 & ermC == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermF = ifelse(PermF == 1 & ermF == 1, "Yes",
+                                    ifelse(PermF == 1 & ermF == 0, "No",
+                                           ifelse (PermF == 0 & ermF == 1, "No", "ditch")))) %>% 
+  mutate(transmission_mef = ifelse(Pmef == 1 & mef == 1, "Yes",
+                                   ifelse(Pmef == 1 & mef == 0, "No",
+                                           ifelse (Pmef == 0 & mef == 1, "No", "ditch")))) %>% 
+  mutate(transmission_msrA = ifelse(PmsrA == 1 & msrA == 1, "Yes",
+                                    ifelse(PmsrA == 1 & msrA == 0, "No",
+                                           ifelse (PmsrA == 0 & msrA == 1, "No", "ditch")))) %>% 
+  mutate(transmission_msrE = ifelse(PmsrE == 1 & msrE == 1, "Yes",
+                                    ifelse(PmsrE == 1 & msrE == 0, "No",
+                                           ifelse (PmsrE == 0 & msrE == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetM = ifelse(PtetM == 1 & tetM == 1, "Yes",
+                                    ifelse(PtetM == 1 & tetM == 0, "No",
+                                           ifelse (PtetM==0 & tetM == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetO = ifelse(PtetO == 1 & tetO == 1, "Yes",
+                                    ifelse(PtetO == 1 & tetO == 0, "No",
+                                           ifelse (PtetO == 0 & tetO == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetW = ifelse(PtetW == 1 & tetW == 1, "Yes",
+                                    ifelse(PtetW == 1 & tetW == 0, "No",
+                                           ifelse (PtetW == 0 & tetW == 1, "No", "ditch")))) %>% 
+  mutate(group = ifelse(Relationship == "Parent-child", "0","1"))
+
+# Convert to factor
+cols <- c("Sample_ID","Group","Relationship","ermA","ermB","ermC","ermF","mef","msrA","msrE","tetM","tetO","tetW","PermA","PermB","PermC","PermF","Pmef","PmsrA","PmsrE","PtetM","PtetO","PtetW", "transmission_ermA","transmission_ermB","transmission_ermC","transmission_ermF","transmission_mef","transmission_msrA","transmission_msrE","transmission_tetM","transmission_tetO","transmission_tetW", "group")
+data_shape_2 <- lapply(data_shape[cols], as.factor) %>% data.frame()
+
+```
+
+### ermA
+```{r ermA-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+xtabs(~ermA + PermA, data = data_shape_2)
+
+data_shape_ermA <- data_shape_2[,c("group","transmission_ermA")]
+
+data_shape_ermA_1 <- data_shape_ermA %>% 
+  filter(transmission_ermA=="Yes" | transmission_ermA=="No")
+
+xtabs(~group + transmission_ermA, data = data_shape_ermA_1)
+
+logit_ermA <-  glm(transmission_ermA~.,family = binomial, data=data_shape_ermA_1)
+
+summary(logit_ermA)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermA)
+
+exp(cbind("Odds ratio" = coef(logit_ermA), confint.default(logit_ermA, level = 0.95)))
+
+```
+
+
+
+### ermB
+```{r ermB-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+xtabs(~ermB + PermB, data = data_shape_2)
+
+data_shape_ermB <- data_shape_2[,c("group","transmission_ermB")]
+
+data_shape_ermB_1 <- data_shape_ermB %>% 
+  filter(transmission_ermB=="Yes" | transmission_ermB=="No")
+
+xtabs(~group + transmission_ermB, data = data_shape_ermB_1)
+
+logit_ermB <-  glm(transmission_ermB~.,family = binomial, data=data_shape_ermB_1)
+
+summary(logit_ermB)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermB)
+
+exp(cbind("Odds ratio" = coef(logit_ermB), confint.default(logit_ermB, level = 0.95)))
+
+```
+
+
+### ermC
+```{r ermC-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+xtabs(~ermC + PermC, data = data_shape_2)
+
+data_shape_ermC <- data_shape_2[,c("group","transmission_ermC")]
+
+data_shape_ermC_1 <- data_shape_ermC %>% 
+  filter(transmission_ermC=="Yes" | transmission_ermC=="No")
+
+xtabs(~group + transmission_ermC, data = data_shape_ermC_1)
+
+logit_ermC <-  glm(transmission_ermC~.,family = binomial, data=data_shape_ermC_1)
+
+summary(logit_ermC)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermC)
+
+exp(cbind("Odds ratio" = coef(logit_ermC), confint.default(logit_ermC, level = 0.95)))
+
+```
+
+
+### ermF
+```{r ermF-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+xtabs(~ermF + PermF, data = data_shape_2)
+
+data_shape_ermF <- data_shape_2[,c("group","transmission_ermF")]
+
+data_shape_ermF_1 <- data_shape_ermF %>% 
+  filter(transmission_ermF=="Yes" | transmission_ermF=="No")
+
+xtabs(~group + transmission_ermF, data = data_shape_ermF_1)
+
+logit_ermF <-  glm(transmission_ermF~.,family = binomial, data=data_shape_ermF_1)
+
+summary(logit_ermF)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermF)
+
+exp(cbind("Odds ratio" = coef(logit_ermF), confint.default(logit_ermF, level = 0.95)))
+
+```
+
+
+### mef
+```{r mef-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+xtabs(~mef + Pmef, data = data_shape_2)
+
+data_shape_mef <- data_shape_2[,c("group","transmission_mef")]
+
+data_shape_mef_1 <- data_shape_mef %>% 
+  filter(transmission_mef=="Yes" | transmission_mef=="No")
+
+xtabs(~group + transmission_mef, data = data_shape_mef_1)
+
+logit_mef <-  glm(transmission_mef~.,family = binomial, data=data_shape_mef_1)
+
+summary(logit_mef)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_mef)
+
+exp(cbind("Odds ratio" = coef(logit_mef), confint.default(logit_mef, level = 0.95)))
+
+```
+
+
+### msrA
+```{r msrA-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+xtabs(~msrA + PmsrA, data = data_shape_2)
+
+data_shape_msrA <- data_shape_2[,c("group","transmission_msrA")]
+
+data_shape_msrA_1 <- data_shape_msrA %>% 
+  filter(transmission_msrA=="Yes" | transmission_msrA=="No")
+
+xtabs(~group + transmission_msrA, data = data_shape_msrA_1)
+
+logit_msrA <-  glm(transmission_msrA~.,family = binomial, data=data_shape_msrA_1)
+
+summary(logit_msrA)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_msrA)
+
+exp(cbind("Odds ratio" = coef(logit_msrA), confint.default(logit_msrA, level = 0.95)))
+
+```
+
+
+### msrE
+```{r msrE-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+xtabs(~msrE + PmsrE, data = data_shape_2)
+
+data_shape_msrE <- data_shape_2[,c("group","transmission_msrE")]
+
+data_shape_msrE_1 <- data_shape_msrE %>% 
+  filter(transmission_msrE=="Yes" | transmission_msrE=="No")
+
+xtabs(~group + transmission_msrE, data = data_shape_msrE_1)
+
+logit_msrE <-  glm(transmission_msrE~.,family = binomial, data=data_shape_msrE_1)
+
+summary(logit_msrE)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_msrE)
+
+exp(cbind("Odds ratio" = coef(logit_msrE), confint.default(logit_msrE, level = 0.95)))
+
+```
+
+
+### tetM
+```{r tetM-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+xtabs(~tetM + PtetM, data = data_shape_2)
+
+data_shape_tetM <- data_shape_2[,c("group","transmission_tetM")]
+
+data_shape_tetM_1 <- data_shape_tetM %>% 
+  filter(transmission_tetM=="Yes" | transmission_tetM=="No")
+
+xtabs(~group + transmission_tetM, data = data_shape_tetM_1)
+
+logit_tetM <-  glm(transmission_tetM~.,family = binomial, data=data_shape_tetM_1)
+
+summary(logit_tetM)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetM)
+
+exp(cbind("Odds ratio" = coef(logit_tetM), confint.default(logit_tetM, level = 0.95)))
+
+```
+
+
+### tetW
+```{r tetW-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+xtabs(~tetW + PtetW, data = data_shape_2)
+
+data_shape_tetW <- data_shape_2[,c("group","transmission_tetW")]
+
+data_shape_tetW_1 <- data_shape_tetW %>% 
+  filter(transmission_tetW=="Yes" | transmission_tetW=="No")
+
+xtabs(~group + transmission_tetW, data = data_shape_tetW_1)
+
+logit_tetW <-  glm(transmission_tetW~.,family = binomial, data=data_shape_tetW_1)
+
+summary(logit_tetW)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetW)
+
+exp(cbind("Odds ratio" = coef(logit_tetW), confint.default(logit_tetW, level = 0.95)))
+
+```
+
+
+### tetO
+```{r tetO-relationship, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+
+xtabs(~tetO + PtetO, data = data_shape_2)
+
+data_shape_tetO <- data_shape_2[,c("group","transmission_tetO")]
+
+data_shape_tetO_1 <- data_shape_tetO %>% 
+  filter(transmission_tetO=="Yes" | transmission_tetO=="No")
+
+xtabs(~group + transmission_tetO, data = data_shape_tetO_1)
+
+logit_tetO <-  glm(transmission_tetO~.,family = binomial, data=data_shape_tetO_1)
+
+summary(logit_tetO)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetO)
+
+exp(cbind("Odds ratio" = coef(logit_tetO), confint.default(logit_tetO, level = 0.95)))
+```
+
+
+
+## Macrolide therapy effect on transmission risk of macrolide resistance genes at different relationships
+### shape data
+```{r shape data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Load package
+pacman::p_load(
+  readr,
+  readxl,
+  dplyr,
+  data.table,
+  writexl,
+  mlbench,
+  MASS,
+  pROC,
+  rms,
+  vcd
+)
+
+# Shape data
+## Import data
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Windows
+data_all <- read_excel("Transmission coding_for reviewers.xlsx")
+
+data_all$Relationship <- as.factor(data_all$Relationship)
+
+data_all <- data_all %>% 
+  mutate(Relationship = ifelse(Relationship == 1, "Parent-child",
+                                    ifelse(Relationship == 2, "Sibling",
+                                           ifelse (Relationship == 3, "Partner", "Friend"))))
+
+## 1-1 as transmission, 1-0. 0-1 as no transmission
+data_shape <- data_all %>% 
+  mutate(transmission_ermA = ifelse(PermA == 1 & ermA == 1, "Yes",
+                                    ifelse(PermA == 1 & ermA == 0, "No",
+                                           ifelse (PermA == 0 & ermA == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermB = ifelse(PermB == 1 & ermB == 1, "Yes",
+                                    ifelse(PermB == 1 & ermB == 0, "No",
+                                           ifelse (PermB == 0 & ermB == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermC = ifelse(PermC == 1 & ermC == 1, "Yes",
+                                    ifelse(PermC == 1 & ermC == 0, "No",
+                                           ifelse (PermC == 0 & ermC == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermF = ifelse(PermF == 1 & ermF == 1, "Yes",
+                                    ifelse(PermF == 1 & ermF == 0, "No",
+                                           ifelse (PermF == 0 & ermF == 1, "No", "ditch")))) %>% 
+  mutate(transmission_mef = ifelse(Pmef == 1 & mef == 1, "Yes",
+                                   ifelse(Pmef == 1 & mef == 0, "No",
+                                           ifelse (Pmef == 0 & mef == 1, "No", "ditch")))) %>% 
+  mutate(transmission_msrA = ifelse(PmsrA == 1 & msrA == 1, "Yes",
+                                    ifelse(PmsrA == 1 & msrA == 0, "No",
+                                           ifelse (PmsrA == 0 & msrA == 1, "No", "ditch")))) %>% 
+  mutate(transmission_msrE = ifelse(PmsrE == 1 & msrE == 1, "Yes",
+                                    ifelse(PmsrE == 1 & msrE == 0, "No",
+                                           ifelse (PmsrE == 0 & msrE == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetM = ifelse(PtetM == 1 & tetM == 1, "Yes",
+                                    ifelse(PtetM == 1 & tetM == 0, "No",
+                                           ifelse (PtetM==0 & tetM == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetO = ifelse(PtetO == 1 & tetO == 1, "Yes",
+                                    ifelse(PtetO == 1 & tetO == 0, "No",
+                                           ifelse (PtetO == 0 & tetO == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetW = ifelse(PtetW == 1 & tetW == 1, "Yes",
+                                    ifelse(PtetW == 1 & tetW == 0, "No",
+                                           ifelse (PtetW == 0 & tetW == 1, "No", "ditch")))) %>% 
+  mutate(group = ifelse(Group == "No_macrolide", "0","1"))
+
+# Convert to factor
+cols <- c("Sample_ID","Group","Relationship","ermA","ermB","ermC","ermF","mef","msrA","msrE","tetM","tetO","tetW","PermA","PermB","PermC","PermF","Pmef","PmsrA","PmsrE","PtetM","PtetO","PtetW", "transmission_ermA","transmission_ermB","transmission_ermC","transmission_ermF","transmission_mef","transmission_msrA","transmission_msrE","transmission_tetM","transmission_tetO","transmission_tetW", "group")
+
+data_shape_2 <- lapply(data_shape[cols], as.factor) %>% data.frame()
+
+data_shape_PC<- data_shape_2 %>% 
+  filter(Relationship == "Parent-child")
+
+data_shape_Partner <- data_shape_2 %>% 
+  filter(Relationship == "Partner")
+```
+
+### ermA
+```{r ermA, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, error=TRUE, dpi=300}
+# Parent-child (PC)
+xtabs(~ermA + PermA, data = data_shape_PC)
+
+data_ermA_PC <- data_shape_PC[,c("group","transmission_ermA")]
+
+data_ermA_PC_1 <- data_ermA_PC %>% 
+  filter(transmission_ermA=="Yes" | transmission_ermA=="No")
+
+xtabs(~group + transmission_ermA, data = data_ermA_PC_1)
+
+logit_ermA_PC_1 <-  glm(transmission_ermA~.,family = binomial, data=data_ermA_PC_1)
+
+summary(logit_ermA_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermA_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_ermA_PC_1), confint.default(logit_ermA_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~ermA + PermA, data = data_shape_Partner)
+
+data_ermA_Partner <- data_shape_Partner[,c("group","transmission_ermA")]
+
+data_ermA_Partner_1 <- data_ermA_Partner %>% 
+  filter(transmission_ermA=="Yes" | transmission_ermA=="No")
+
+xtabs(~group + transmission_ermA, data = data_ermA_Partner_1)
+
+logit_ermA_Partner_1 <-  glm(transmission_ermA~.,family = binomial, data=data_ermA_Partner_1)
+
+summary(logit_ermA_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermA_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_ermA_Partner_1), confint.default(logit_ermA_Partner_1, level = 0.95)))
+```
+
+
+### ermB
+```{r ermB, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Parent-child (PC)
+xtabs(~ermB + PermB, data = data_shape_PC)
+
+data_ermB_PC <- data_shape_PC[,c("group","transmission_ermB")]
+
+data_ermB_PC_1 <- data_ermB_PC %>% 
+  filter(transmission_ermB=="Yes" | transmission_ermB=="No")
+
+xtabs(~group + transmission_ermB, data = data_ermB_PC_1)
+
+logit_ermB_PC_1 <-  glm(transmission_ermB~.,family = binomial, data=data_ermB_PC_1)
+
+summary(logit_ermB_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermB_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_ermB_PC_1), confint.default(logit_ermB_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~ermB + PermB, data = data_shape_Partner)
+
+data_ermB_Partner <- data_shape_Partner[,c("group","transmission_ermB")]
+
+data_ermB_Partner_1 <- data_ermB_Partner %>% 
+  filter(transmission_ermB=="Yes" | transmission_ermB=="No")
+
+xtabs(~group + transmission_ermB, data = data_ermB_Partner_1)
+
+logit_ermB_Partner_1 <-  glm(transmission_ermB~.,family = binomial, data=data_ermB_Partner_1)
+
+summary(logit_ermB_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermB_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_ermB_Partner_1), confint.default(logit_ermB_Partner_1, level = 0.95)))
+
+```
+
+### ermC
+```{r ermC, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Parent-child (PC)
+xtabs(~ermC + PermC, data = data_shape_PC)
+
+data_ermC_PC <- data_shape_PC[,c("group","transmission_ermC")]
+
+data_ermC_PC_1 <- data_ermC_PC %>% 
+  filter(transmission_ermC=="Yes" | transmission_ermC=="No")
+
+xtabs(~group + transmission_ermC, data = data_ermC_PC_1)
+
+logit_ermC_PC_1 <-  glm(transmission_ermC~.,family = binomial, data=data_ermC_PC_1)
+
+summary(logit_ermC_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermC_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_ermC_PC_1), confint.default(logit_ermC_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~ermC + PermC, data = data_shape_Partner)
+
+data_ermC_Partner <- data_shape_Partner[,c("group","transmission_ermC")]
+
+data_ermC_Partner_1 <- data_ermC_Partner %>% 
+  filter(transmission_ermC=="Yes" | transmission_ermC=="No")
+
+xtabs(~group + transmission_ermC, data = data_ermC_Partner_1)
+
+logit_ermC_Partner_1 <-  glm(transmission_ermC~.,family = binomial, data=data_ermC_Partner_1)
+
+summary(logit_ermC_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermC_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_ermC_Partner_1), confint.default(logit_ermC_Partner_1, level = 0.95)))
+
+```
+
+### ermF
+```{r ermF, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Parent-child (PC)
+xtabs(~ermF + PermF, data = data_shape_PC)
+
+data_ermF_PC <- data_shape_PC[,c("group","transmission_ermF")]
+
+data_ermF_PC_1 <- data_ermF_PC %>% 
+  filter(transmission_ermF=="Yes" | transmission_ermF=="No")
+
+xtabs(~group + transmission_ermF, data = data_ermF_PC_1)
+
+logit_ermF_PC_1 <-  glm(transmission_ermF~.,family = binomial, data=data_ermF_PC_1)
+
+summary(logit_ermF_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermF_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_ermF_PC_1), confint.default(logit_ermF_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~ermF + PermF, data = data_shape_Partner)
+
+data_ermF_Partner <- data_shape_Partner[,c("group","transmission_ermF")]
+
+data_ermF_Partner_1 <- data_ermF_Partner %>% 
+  filter(transmission_ermF=="Yes" | transmission_ermF=="No")
+
+xtabs(~group + transmission_ermF, data = data_ermF_Partner_1)
+
+logit_ermF_Partner_1 <-  glm(transmission_ermF~.,family = binomial, data=data_ermF_Partner_1)
+
+summary(logit_ermF_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermF_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_ermF_Partner_1), confint.default(logit_ermF_Partner_1, level = 0.95)))
+
+```
+
+### mef
+```{r mef, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Parent-child (PC)
+xtabs(~mef + Pmef, data = data_shape_PC)
+
+data_mef_PC <- data_shape_PC[,c("group","transmission_mef")]
+
+data_mef_PC_1 <- data_mef_PC %>% 
+  filter(transmission_mef=="Yes" | transmission_mef=="No")
+
+xtabs(~group + transmission_mef, data = data_mef_PC_1)
+
+logit_mef_PC_1 <-  glm(transmission_mef~.,family = binomial, data=data_mef_PC_1)
+
+summary(logit_mef_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_mef_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_mef_PC_1), confint.default(logit_mef_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~mef + Pmef, data = data_shape_Partner)
+
+data_mef_Partner <- data_shape_Partner[,c("group","transmission_mef")]
+
+data_mef_Partner_1 <- data_mef_Partner %>% 
+  filter(transmission_mef=="Yes" | transmission_mef=="No")
+
+xtabs(~group + transmission_mef, data = data_mef_Partner_1)
+
+logit_mef_Partner_1 <-  glm(transmission_mef~.,family = binomial, data=data_mef_Partner_1)
+
+summary(logit_mef_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_mef_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_mef_Partner_1), confint.default(logit_mef_Partner_1, level = 0.95)))
+
+```
+
+### msrA
+```{r msrA, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Parent-child (PC)
+xtabs(~msrA + PmsrA, data = data_shape_PC)
+
+data_msrA_PC <- data_shape_PC[,c("group","transmission_msrA")]
+
+data_msrA_PC_1 <- data_msrA_PC %>% 
+  filter(transmission_msrA=="Yes" | transmission_msrA=="No")
+
+xtabs(~group + transmission_msrA, data = data_msrA_PC_1)
+
+logit_msrA_PC_1 <-  glm(transmission_msrA~.,family = binomial, data=data_msrA_PC_1)
+
+summary(logit_msrA_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_msrA_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_msrA_PC_1), confint.default(logit_msrA_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~msrA + PmsrA, data = data_shape_Partner)
+
+data_msrA_Partner <- data_shape_Partner[,c("group","transmission_msrA")]
+
+data_msrA_Partner_1 <- data_msrA_Partner %>% 
+  filter(transmission_msrA=="Yes" | transmission_msrA=="No")
+
+xtabs(~group + transmission_msrA, data = data_msrA_Partner_1)
+
+logit_msrA_Partner_1 <-  glm(transmission_msrA~.,family = binomial, data=data_msrA_Partner_1)
+
+summary(logit_msrA_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_msrA_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_msrA_Partner_1), confint.default(logit_msrA_Partner_1, level = 0.95)))
+
+```
+
+### msrE
+```{r msrE, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Parent-child (PC)
+xtabs(~msrE + PmsrE, data = data_shape_PC)
+
+data_msrE_PC <- data_shape_PC[,c("group","transmission_msrE")]
+
+data_msrE_PC_1 <- data_msrE_PC %>% 
+  filter(transmission_msrE=="Yes" | transmission_msrE=="No")
+
+xtabs(~group + transmission_msrE, data = data_msrE_PC_1)
+
+logit_msrE_PC_1 <-  glm(transmission_msrE~.,family = binomial, data=data_msrE_PC_1)
+
+summary(logit_msrE_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_msrE_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_msrE_PC_1), confint.default(logit_msrE_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~msrE + PmsrE, data = data_shape_Partner)
+
+data_msrE_Partner <- data_shape_Partner[,c("group","transmission_msrE")]
+
+data_msrE_Partner_1 <- data_msrE_Partner %>% 
+  filter(transmission_msrE=="Yes" | transmission_msrE=="No")
+
+xtabs(~group + transmission_msrE, data = data_msrE_Partner_1)
+
+logit_msrE_Partner_1 <-  glm(transmission_msrE~.,family = binomial, data=data_msrE_Partner_1)
+
+summary(logit_msrE_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_msrE_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_msrE_Partner_1), confint.default(logit_msrE_Partner_1, level = 0.95)))
+
+```
+
+### tetM
+```{r tetM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Parent-child (PC)
+xtabs(~tetM + PtetM, data = data_shape_PC)
+
+data_tetM_PC <- data_shape_PC[,c("group","transmission_tetM")]
+
+data_tetM_PC_1 <- data_tetM_PC %>% 
+  filter(transmission_tetM=="Yes" | transmission_tetM=="No")
+
+xtabs(~group + transmission_tetM, data = data_tetM_PC_1)
+
+logit_tetM_PC_1 <-  glm(transmission_tetM~.,family = binomial, data=data_tetM_PC_1)
+
+summary(logit_tetM_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetM_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_tetM_PC_1), confint.default(logit_tetM_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~tetM + PtetM, data = data_shape_Partner)
+
+data_tetM_Partner <- data_shape_Partner[,c("group","transmission_tetM")]
+
+data_tetM_Partner_1 <- data_tetM_Partner %>% 
+  filter(transmission_tetM=="Yes" | transmission_tetM=="No")
+
+xtabs(~group + transmission_tetM, data = data_tetM_Partner_1)
+
+logit_tetM_Partner_1 <-  glm(transmission_tetM~.,family = binomial, data=data_tetM_Partner_1)
+
+summary(logit_tetM_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetM_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_tetM_Partner_1), confint.default(logit_tetM_Partner_1, level = 0.95)))
+
+```
+
+### tetW
+```{r tetW, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+
+# Parent-child (PC)
+xtabs(~tetW + PtetW, data = data_shape_PC)
+
+data_tetW_PC <- data_shape_PC[,c("group","transmission_tetW")]
+
+data_tetW_PC_1 <- data_tetW_PC %>% 
+  filter(transmission_tetW=="Yes" | transmission_tetW=="No")
+
+xtabs(~group + transmission_tetW, data = data_tetW_PC_1)
+
+logit_tetW_PC_1 <-  glm(transmission_tetW~.,family = binomial, data=data_tetW_PC_1)
+
+summary(logit_tetW_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetW_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_tetW_PC_1), confint.default(logit_tetW_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~tetW + PtetW, data = data_shape_Partner)
+
+data_tetW_Partner <- data_shape_Partner[,c("group","transmission_tetW")]
+
+data_tetW_Partner_1 <- data_tetW_Partner %>% 
+  filter(transmission_tetW=="Yes" | transmission_tetW=="No")
+
+xtabs(~group + transmission_tetW, data = data_tetW_Partner_1)
+
+logit_tetW_Partner_1 <-  glm(transmission_tetW~.,family = binomial, data=data_tetW_Partner_1)
+
+summary(logit_tetW_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetW_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_tetW_Partner_1), confint.default(logit_tetW_Partner_1, level = 0.95)))
+```
+
+### tetO
+```{r tetO, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+# Parent-child (PC)
+xtabs(~tetO + PtetO, data = data_shape_PC)
+
+data_tetO_PC <- data_shape_PC[,c("group","transmission_tetO")]
+
+data_tetO_PC_1 <- data_tetO_PC %>% 
+  filter(transmission_tetO=="Yes" | transmission_tetO=="No")
+
+xtabs(~group + transmission_tetO, data = data_tetO_PC_1)
+
+logit_tetO_PC_1 <-  glm(transmission_tetO~.,family = binomial, data=data_tetO_PC_1)
+
+summary(logit_tetO_PC_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetO_PC_1)
+
+exp(cbind("Odds ratio" = coef(logit_tetO_PC_1), confint.default(logit_tetO_PC_1, level = 0.95)))
+
+
+# Partner
+
+xtabs(~tetO + PtetO, data = data_shape_Partner)
+
+data_tetO_Partner <- data_shape_Partner[,c("group","transmission_tetO")]
+
+data_tetO_Partner_1 <- data_tetO_Partner %>% 
+  filter(transmission_tetO=="Yes" | transmission_tetO=="No")
+
+xtabs(~group + transmission_tetO, data = data_tetO_Partner_1)
+
+logit_tetO_Partner_1 <-  glm(transmission_tetO~.,family = binomial, data=data_tetO_Partner_1)
+
+summary(logit_tetO_Partner_1)
+
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetO_Partner_1)
+
+exp(cbind("Odds ratio" = coef(logit_tetO_Partner_1), confint.default(logit_tetO_Partner_1, level = 0.95)))
+
+```
+
+
+
+

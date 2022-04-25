@@ -1,0 +1,700 @@
+---
+title: "AZM Onward transmission analysis_cohabitant"
+subtitle: "Resistance data"
+author: "Yiming Wang"
+date: 09/12/2021
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Hypothesis and assumption
+```{r Hypothesis and assumption, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+  # In this analysis, we hypothesized that there is onward transmission of macrolide resistance genes from patients to close contacts in macrolide group
+  # To test our hypothesis, we aims to assess whether the presence of resistance genes in close contact is dependent/independent of the presence of resistance genes in patients, therefore, pair analysis of resistance genes was conducted using binary logistic regression.
+  # Binary logistic regression can be used for two purposes: 
+    ## Confirmation of hypothesis: The association between IV and DV (this is reason why we employed this)
+    ## Predictive classification: Simple machine learning model
+```
+
+
+
+# Learning material and Required packages
+## Learning material
+```{r learning, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+ # https://towardsdatascience.com/implementing-binary-logistic-regression-in-r-7d802a9d98fe
+ # https://rpubs.com/juanhklopper/logistic_regression
+ # https://stats.idre.ucla.edu/r/dae/logit-regression/ ## Odds ratio
+```
+
+
+## Load Packages
+```{r Load packages, echo=TRUE,message=FALSE, warning=FALSE}
+pacman::p_load(
+  readr,
+  readxl,
+  dplyr,
+  data.table,
+  writexl,
+  mlbench,
+  MASS,
+  pROC,
+  rms,
+  vcd
+)
+```
+
+# Import and shape data
+## Import data to R
+```{r Import data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") #Windows
+# setwd("/Volumes/Yiming Wang/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") #Mac
+data_all <- read_excel("transmission coding_cohabitant.xlsx")
+
+```
+
+## Shape data to pairs
+```{r shape data to pairs, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Shape
+
+## Remove regular contact
+data_all <- data_all %>% 
+  filter(Contact_level == "Household_contact")
+
+## 1-1 as transmission, 1-0. 0-1 as no transmission
+data_shape_situation1 <- data_all %>% 
+  mutate(transmission_ermA = ifelse(PermA == 1 & ermA == 1, "Yes",
+                                    ifelse(PermA == 1 & ermA == 0, "No",
+                                           ifelse (PermA == 0 & ermA == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermB = ifelse(PermB == 1 & ermB == 1, "Yes",
+                                    ifelse(PermB == 1 & ermB == 0, "No",
+                                           ifelse (PermB == 0 & ermB == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermC = ifelse(PermC == 1 & ermC == 1, "Yes",
+                                    ifelse(PermC == 1 & ermC == 0, "No",
+                                           ifelse (PermC == 0 & ermC == 1, "No", "ditch")))) %>% 
+  mutate(transmission_ermF = ifelse(PermF == 1 & ermF == 1, "Yes",
+                                    ifelse(PermF == 1 & ermF == 0, "No",
+                                           ifelse (PermF == 0 & ermF == 1, "No", "ditch")))) %>% 
+  mutate(transmission_mef = ifelse(Pmef == 1 & mef == 1, "Yes",
+                                   ifelse(Pmef == 1 & mef == 0, "No",
+                                           ifelse (Pmef == 0 & mef == 1, "No", "ditch")))) %>% 
+  mutate(transmission_msrA = ifelse(PmsrA == 1 & msrA == 1, "Yes",
+                                    ifelse(PmsrA == 1 & msrA == 0, "No",
+                                           ifelse (PmsrA == 0 & msrA == 1, "No", "ditch")))) %>% 
+  mutate(transmission_msrE = ifelse(PmsrE == 1 & msrE == 1, "Yes",
+                                    ifelse(PmsrE == 1 & msrE == 0, "No",
+                                           ifelse (PmsrE == 0 & msrE == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetM = ifelse(PtetM == 1 & tetM == 1, "Yes",
+                                    ifelse(PtetM == 1 & tetM == 0, "No",
+                                           ifelse (PtetM==0 & tetM == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetO = ifelse(PtetO == 1 & tetO == 1, "Yes",
+                                    ifelse(PtetO == 1 & tetO == 0, "No",
+                                           ifelse (PtetO == 0 & tetO == 1, "No", "ditch")))) %>% 
+  mutate(transmission_tetW = ifelse(PtetW == 1 & tetW == 1, "Yes",
+                                    ifelse(PtetW == 1 & tetW == 0, "No",
+                                           ifelse (PtetW == 0 & tetW == 1, "No", "ditch")))) %>% 
+  mutate(group = ifelse(Group_ID == "No_macrolide", "0","1"))
+
+
+## P-CC (1-1) as transmission, 1-0, 0-1, 0-0 as no transmission
+data_shape_situation2 <- data_all %>% 
+  mutate(transmission_ermA = ifelse(PermA == 1 & ermA == 1, "Yes","No")) %>% 
+  mutate(transmission_ermB = ifelse(PermB == 1 & ermB == 1, "Yes","No")) %>% 
+  mutate(transmission_ermC = ifelse(PermC == 1 & ermC == 1, "Yes","No")) %>% 
+  mutate(transmission_ermF = ifelse(PermF == 1 & ermF == 1, "Yes","No")) %>% 
+  mutate(transmission_mef = ifelse(Pmef == 1 & mef == 1, "Yes","No")) %>% 
+  mutate(transmission_msrA = ifelse(PmsrA == 1 & msrA == 1, "Yes","No")) %>% 
+  mutate(transmission_msrE = ifelse(PmsrE == 1 & msrE == 1, "Yes","No")) %>% 
+  mutate(transmission_tetM = ifelse(PtetM == 1 & tetM == 1, "Yes","No")) %>% 
+  mutate(transmission_tetO = ifelse(PtetO == 1 & tetO == 1, "Yes","No")) %>% 
+  mutate(transmission_tetW = ifelse(PtetW == 1 & tetW == 1, "Yes","No")) %>% 
+  mutate(group = ifelse(Group_ID == "No_macrolide", "0","1"))
+
+# Class
+class(data_shape_situation1$transmission_ermA)
+class(data_shape_situation2$transmission_ermA)
+```
+
+## Shape data to factor
+```{r shape data to factor, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Shape
+cols <- c("Sample_ID","Group_ID","ermA","ermB","ermC","ermF","mef","msrA","msrE","tetM","tetO","tetW","PermA","PermB","PermC","PermF","Pmef","PmsrA","PmsrE","PtetM","PtetO","PtetW", "transmission_ermA","transmission_ermB","transmission_ermC","transmission_ermF","transmission_mef","transmission_msrA","transmission_msrE","transmission_tetM","transmission_tetO","transmission_tetW", "group")
+data_shape_situation1_2 <- lapply(data_shape_situation1[cols], as.factor) %>% data.frame()
+data_shape_situation2_2 <- lapply(data_shape_situation2[cols], as.factor) %>% data.frame()
+
+# Class
+class(data_shape_situation1_2$transmission_ermA)
+class(data_shape_situation2_2$transmission_ermA)
+
+```
+
+# Binary logistic regression for confirmation purpose not for prediction purpose
+
+## ermA gene - Macrolide group vs Non-macrolide group
+```{r ermA, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~ermA + PermA, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_ermA_situation1 <- data_shape_situation1_2[,c("group","transmission_ermA")]
+
+# Filter out transmission=ditch
+data_ermA_situation1_1 <- data_ermA_situation1 %>% 
+  filter(transmission_ermA=="Yes" | transmission_ermA=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_ermA, data = data_ermA_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_ermA_situation1 <-  glm(transmission_ermA~.,family = binomial, data=data_ermA_situation1_1)
+summary(logit_ermA_situation1)
+
+
+# Situation 2
+xtabs(~ermA + PermA, data = data_shape_situation2_2)
+data_ermA_situation2 <- data_shape_situation2_2[,c("group","transmission_ermA")]
+
+# Filter out transmission=ditch
+data_ermA_situation2_1 <- data_ermA_situation2 %>% 
+  filter(transmission_ermA=="Yes" | transmission_ermA=="No")
+
+xtabs(~group + transmission_ermA, data = data_ermA_situation2_1)
+
+logit_ermA_situation2 <-  glm(transmission_ermA~.,family = binomial, data=data_ermA_situation2_1)
+summary(logit_ermA_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermA_situation1)
+rsquared(logit_ermA_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_ermA_situation1), confint.default(logit_ermA_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_ermA_situation2), confint.default(logit_ermA_situation2, level = 0.95)))
+```
+
+## ermB gene - Macrolide group vs Non-macrolide group
+```{r ermB, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~ermB + PermB, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_ermB_situation1 <- data_shape_situation1_2[,c("group","transmission_ermB")]
+
+# Filter out transmission=ditch
+data_ermB_situation1_1 <- data_ermB_situation1 %>% 
+  filter(transmission_ermB=="Yes" | transmission_ermB=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_ermB, data = data_ermB_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_ermB_situation1 <-  glm(transmission_ermB~.,family = binomial, data=data_ermB_situation1_1)
+summary(logit_ermB_situation1)
+
+
+# Situation 2
+xtabs(~ermB + PermB, data = data_shape_situation2_2)
+data_ermB_situation2 <- data_shape_situation2_2[,c("group","transmission_ermB")]
+
+# Filter out transmission=ditch
+data_ermB_situation2_1 <- data_ermB_situation2 %>% 
+  filter(transmission_ermB=="Yes" | transmission_ermB=="No")
+
+xtabs(~group + transmission_ermB, data = data_ermB_situation2_1)
+
+logit_ermB_situation2 <-  glm(transmission_ermB~.,family = binomial, data=data_ermB_situation2_1)
+summary(logit_ermB_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermB_situation1)
+rsquared(logit_ermB_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_ermB_situation1), confint.default(logit_ermB_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_ermB_situation2), confint.default(logit_ermB_situation2, level = 0.95)))
+```
+
+## ermC gene - Macrolide group vs Non-macrolide group
+```{r ermC, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~ermC + PermC, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_ermC_situation1 <- data_shape_situation1_2[,c("group","transmission_ermC")]
+
+# Filter out transmission=ditch
+data_ermC_situation1_1 <- data_ermC_situation1 %>% 
+  filter(transmission_ermC=="Yes" | transmission_ermC=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_ermC, data = data_ermC_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_ermC_situation1 <-  glm(transmission_ermC~.,family = binomial, data=data_ermC_situation1_1)
+summary(logit_ermC_situation1)
+
+
+# Situation 2
+xtabs(~ermC + PermC, data = data_shape_situation2_2)
+data_ermC_situation2 <- data_shape_situation2_2[,c("group","transmission_ermC")]
+
+# Filter out transmission=ditch
+data_ermC_situation2_1 <- data_ermC_situation2 %>% 
+  filter(transmission_ermC=="Yes" | transmission_ermC=="No")
+
+xtabs(~group + transmission_ermC, data = data_ermC_situation2_1)
+
+logit_ermC_situation2 <-  glm(transmission_ermC~.,family = binomial, data=data_ermC_situation2_1)
+summary(logit_ermC_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermC_situation1)
+rsquared(logit_ermC_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_ermC_situation1), confint.default(logit_ermC_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_ermC_situation2), confint.default(logit_ermC_situation2, level = 0.95)))
+```
+
+## ermF gene - Macrolide group vs Non-macrolide group
+```{r ermF, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~ermF + PermF, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_ermF_situation1 <- data_shape_situation1_2[,c("group","transmission_ermF")]
+
+# Filter out transmission=ditch
+data_ermF_situation1_1 <- data_ermF_situation1 %>% 
+  filter(transmission_ermF=="Yes" | transmission_ermF=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_ermF, data = data_ermF_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_ermF_situation1 <-  glm(transmission_ermF~.,family = binomial, data=data_ermF_situation1_1)
+summary(logit_ermF_situation1)
+
+
+# Situation 2
+xtabs(~ermF + PermF, data = data_shape_situation2_2)
+data_ermF_situation2 <- data_shape_situation2_2[,c("group","transmission_ermF")]
+
+# Filter out transmission=ditch
+data_ermF_situation2_1 <- data_ermF_situation2 %>% 
+  filter(transmission_ermF=="Yes" | transmission_ermF=="No")
+
+xtabs(~group + transmission_ermF, data = data_ermF_situation2_1)
+
+logit_ermF_situation2 <-  glm(transmission_ermF~.,family = binomial, data=data_ermF_situation2_1)
+summary(logit_ermF_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_ermF_situation1)
+rsquared(logit_ermF_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_ermF_situation1), confint.default(logit_ermF_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_ermF_situation2), confint.default(logit_ermF_situation2, level = 0.95)))
+```
+
+## mef gene - Macrolide group vs Non-macrolide group
+```{r mef, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~mef + Pmef, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_mef_situation1 <- data_shape_situation1_2[,c("group","transmission_mef")]
+
+# Filter out transmission=ditch
+data_mef_situation1_1 <- data_mef_situation1 %>% 
+  filter(transmission_mef=="Yes" | transmission_mef=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_mef, data = data_mef_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_mef_situation1 <-  glm(transmission_mef~.,family = binomial, data=data_mef_situation1_1)
+summary(logit_mef_situation1)
+
+
+# Situation 2
+xtabs(~mef + Pmef, data = data_shape_situation2_2)
+data_mef_situation2 <- data_shape_situation2_2[,c("group","transmission_mef")]
+
+# Filter out transmission=ditch
+data_mef_situation2_1 <- data_mef_situation2 %>% 
+  filter(transmission_mef=="Yes" | transmission_mef=="No")
+
+xtabs(~group + transmission_mef, data = data_mef_situation2_1)
+
+logit_mef_situation2 <-  glm(transmission_mef~.,family = binomial, data=data_mef_situation2_1)
+summary(logit_mef_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_mef_situation1)
+rsquared(logit_mef_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_mef_situation1), confint.default(logit_mef_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_mef_situation2), confint.default(logit_mef_situation2, level = 0.95)))
+```
+
+## msrA gene - Macrolide group vs Non-macrolide group
+```{r msrA, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~msrA + PmsrA, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_msrA_situation1 <- data_shape_situation1_2[,c("group","transmission_msrA")]
+
+# Filter out transmission=ditch
+data_msrA_situation1_1 <- data_msrA_situation1 %>% 
+  filter(transmission_msrA=="Yes" | transmission_msrA=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_msrA, data = data_msrA_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_msrA_situation1 <-  glm(transmission_msrA~.,family = binomial, data=data_msrA_situation1_1)
+summary(logit_msrA_situation1)
+
+
+# Situation 2
+xtabs(~msrA + PmsrA, data = data_shape_situation2_2)
+data_msrA_situation2 <- data_shape_situation2_2[,c("group","transmission_msrA")]
+
+# Filter out transmission=ditch
+data_msrA_situation2_1 <- data_msrA_situation2 %>% 
+  filter(transmission_msrA=="Yes" | transmission_msrA=="No")
+
+xtabs(~group + transmission_msrA, data = data_msrA_situation2_1)
+
+logit_msrA_situation2 <-  glm(transmission_msrA~.,family = binomial, data=data_msrA_situation2_1)
+summary(logit_msrA_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_msrA_situation1)
+rsquared(logit_msrA_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_msrA_situation1), confint.default(logit_msrA_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_msrA_situation2), confint.default(logit_msrA_situation2, level = 0.95)))
+```
+
+## msrE gene - Macrolide group vs Non-macrolide group
+```{r msrE, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~msrE + PmsrE, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_msrE_situation1 <- data_shape_situation1_2[,c("group","transmission_msrE")]
+
+# Filter out transmission=ditch
+data_msrE_situation1_1 <- data_msrE_situation1 %>% 
+  filter(transmission_msrE=="Yes" | transmission_msrE=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_msrE, data = data_msrE_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_msrE_situation1 <-  glm(transmission_msrE~.,family = binomial, data=data_msrE_situation1_1)
+summary(logit_msrE_situation1)
+
+
+# Situation 2
+xtabs(~msrE + PmsrE, data = data_shape_situation2_2)
+data_msrE_situation2 <- data_shape_situation2_2[,c("group","transmission_msrE")]
+
+# Filter out transmission=ditch
+data_msrE_situation2_1 <- data_msrE_situation2 %>% 
+  filter(transmission_msrE=="Yes" | transmission_msrE=="No")
+
+xtabs(~group + transmission_msrE, data = data_msrE_situation2_1)
+
+logit_msrE_situation2 <-  glm(transmission_msrE~.,family = binomial, data=data_msrE_situation2_1)
+summary(logit_msrE_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_msrE_situation1)
+rsquared(logit_msrE_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_msrE_situation1), confint.default(logit_msrE_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_msrE_situation2), confint.default(logit_msrE_situation2, level = 0.95)))
+```
+
+## tetM gene - Macrolide group vs Non-macrolide group
+```{r tetM, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~tetM + PtetM, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_tetM_situation1 <- data_shape_situation1_2[,c("group","transmission_tetM")]
+
+# Filter out transmission=ditch
+data_tetM_situation1_1 <- data_tetM_situation1 %>% 
+  filter(transmission_tetM=="Yes" | transmission_tetM=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_tetM, data = data_tetM_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_tetM_situation1 <-  glm(transmission_tetM~.,family = binomial, data=data_tetM_situation1_1)
+summary(logit_tetM_situation1)
+
+
+# Situation 2
+xtabs(~tetM + PtetM, data = data_shape_situation2_2)
+data_tetM_situation2 <- data_shape_situation2_2[,c("group","transmission_tetM")]
+
+# Filter out transmission=ditch
+data_tetM_situation2_1 <- data_tetM_situation2 %>% 
+  filter(transmission_tetM=="Yes" | transmission_tetM=="No")
+
+xtabs(~group + transmission_tetM, data = data_tetM_situation2_1)
+
+logit_tetM_situation2 <-  glm(transmission_tetM~.,family = binomial, data=data_tetM_situation2_1)
+summary(logit_tetM_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetM_situation1)
+rsquared(logit_tetM_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_tetM_situation1), confint.default(logit_tetM_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_tetM_situation2), confint.default(logit_tetM_situation2, level = 0.95)))
+```
+
+## tetO gene - Macrolide group vs Non-macrolide group
+```{r tetO, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~tetO + PtetO, data = data_shape_situation1_2)
+## Create a new data frame of relevant modeling variables
+data_tetO_situation1 <- data_shape_situation1_2[,c("group","transmission_tetO")]
+
+# Filter out transmission=ditch
+data_tetO_situation1_1 <- data_tetO_situation1 %>% 
+  filter(transmission_tetO=="Yes" | transmission_tetO=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_tetO, data = data_tetO_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_tetO_situation1 <-  glm(transmission_tetO~.,family = binomial, data=data_tetO_situation1_1)
+summary(logit_tetO_situation1)
+
+
+# Situation 2
+xtabs(~tetO + PtetO, data = data_shape_situation2_2)
+data_tetO_situation2 <- data_shape_situation2_2[,c("group","transmission_tetO")]
+
+# Filter out transmission=ditch
+data_tetO_situation2_1 <- data_tetO_situation2 %>% 
+  filter(transmission_tetO=="Yes" | transmission_tetO=="No")
+
+xtabs(~group + transmission_tetO, data = data_tetO_situation2_1)
+
+logit_tetO_situation2 <-  glm(transmission_tetO~.,family = binomial, data=data_tetO_situation2_1)
+summary(logit_tetO_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetO_situation1)
+rsquared(logit_tetO_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_tetO_situation1), confint.default(logit_tetO_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_tetO_situation2), confint.default(logit_tetO_situation2, level = 0.95)))
+```
+
+
+## tetW gene - Macrolide group vs Non-macrolide group
+```{r tetW, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+# Situation 1
+## Summary
+xtabs(~tetW + PtetW, data = data_shape_situation1_2)
+
+## Create a new data frame of relevant modeling variables
+data_tetW_situation1 <- data_shape_situation1_2[,c("group","transmission_tetW")]
+
+# Filter out transmission=ditch
+data_tetW_situation1_1 <- data_tetW_situation1 %>% 
+  filter(transmission_tetW=="Yes" | transmission_tetW=="No")
+
+## Analyze the frequency of each category
+xtabs(~group + transmission_tetW, data = data_tetW_situation1_1)
+
+## Forced entry method: in the first, all independent variables are entered
+logit_tetW_situation1 <-  glm(transmission_tetW~.,family = binomial, data=data_tetW_situation1_1)
+summary(logit_tetW_situation1)
+
+
+# Situation 2
+xtabs(~tetW + PtetW, data = data_shape_situation2_2)
+data_tetW_situation2 <- data_shape_situation2_2[,c("group","transmission_tetW")]
+
+# Filter out transmission=ditch
+data_tetW_situation2_1 <- data_tetW_situation2 %>% 
+  filter(transmission_tetW=="Yes" | transmission_tetW=="No")
+
+xtabs(~group + transmission_tetW, data = data_tetW_situation2_1)
+
+logit_tetW_situation2 <-  glm(transmission_tetW~.,family = binomial, data=data_tetW_situation2_1)
+summary(logit_tetW_situation2)
+
+
+# R square
+rsquared <- function(created_model) 
+  {
+  dev <- created_model$deviance
+  null_dev <- created_model$null.deviance
+  model_n <- length(created_model$fitted.values)
+  R_l <- 1 - dev / null_dev
+  R_cs <- 1 - exp(-(null_dev - dev) / model_n)
+  R_n <- R_cs / (1 - exp(-(null_dev / model_n)))
+  cat("Pseudo R-squared for logistic regression model\n\n") 
+  cat("Hosmer and Lemeshow R-squared\t", round(R_l, 3), "\n")
+  cat("Cox and Snell R-squared\t\t\t", round(R_cs, 3), "\n")
+  cat("Nagelkerke R-squared\t\t\t\t", round(R_n, 3), "\n") # This is the one I will choose
+  }
+rsquared(logit_tetW_situation1)
+rsquared(logit_tetW_situation2)
+
+# Odds ratios with 95% CI
+exp(cbind("Odds ratio" = coef(logit_tetW_situation1), confint.default(logit_tetW_situation1, level = 0.95)))
+exp(cbind("Odds ratio" = coef(logit_tetW_situation2), confint.default(logit_tetW_situation2, level = 0.95)))
+```

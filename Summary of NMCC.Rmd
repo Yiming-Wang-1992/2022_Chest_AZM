@@ -1,0 +1,81 @@
+---
+title: "Gee model"
+subtitle: "Resistance data"
+author: "Yiming Wang"
+date: 08/12/2021
+output: 
+  html_document:
+    toc: true
+    toc_depth: 2
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+# Learning material and Required packages
+## Learning material
+```{r learning, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+ # https://data.library.virginia.edu/getting-started-with-generalized-estimating-equations/
+ # https://stats.idre.ucla.edu/r/dae/logit-regression/ ## Odds ratio
+ # https://stackoverflow.com/questions/11461382/error-in-fitting-a-model-with-gee-na-nan-inf-in-foreign-function-call-arg-3 ## error 
+ # https://stat.ethz.ch/pipermail/r-help/2006-April/103372.html ## P-value
+ # https://sakai.unc.edu/access/content/group/2842013b-58f5-4453-aa8d-3e01bacbfc3d/public/Ecol562_Spring2012/docs/lectures/lecture23.htm ## correlation structure
+  ## The last argument, corstr, allows us to specify the correlation structure within groups (id).
+    ### "independence": the observations within the groups are uncorrelated.Apparently, samples within the id are independent, so choose this one
+    ### "exchangeable": each pair of observations in a group has the same correlation.
+    ### "unstructured": each pair of observations in a group is allowed to have a different correlation.
+    ### "AR-M": this is used to fit an autoregressive structure. To obtain a specific autoregressive structure requires the additional argument Mv. For example corstr="AR-M", Mv=1 yields an AR(1) structure, while corstr="AR-M", Mv=2 yields an AR(2) structure.
+    ### "non_stat_M_dep": stands for nonstationary M-dependent and generates a banded correlation matrix. It also requires the Mv argument to denote the number of nonzero off-diagonal bands that are to be estimated. Like "AR-M", "non_stat_M_dep" assumes there is a natural order to the data. Like "unstructured", "non_stat_M_dep" allows the entries within the each nonzero band to be different. As an example corstr="non_stat_M_dep", Mv=1 would correspond to the following correlation matrix for a group of size 4. Here α, β, and γ are parameters that need to be estimated.
+```
+
+
+## Load Packages
+```{r Load packages, echo=TRUE,message=FALSE, warning=FALSE}
+pacman::p_load(
+  readxl,
+  dplyr,
+  data.table,
+  writexl,
+  gee
+)
+```
+
+# Import and shape data
+## Import data to R
+```{r Import data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") #Windows
+# setwd("/Volumes/Yiming Wang/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") #Mac
+data_all <- read_excel("transmission coding_GEE_final.xlsx")
+
+```
+
+## Shape data to factor
+```{r Shape data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+head(data_all)
+# Convert the data to factor
+cols <- c("ID", "Sample_ID","Group_ID","ermA","ermB","ermC","ermF","mef","msrA","msrE","tetM","tetO","tetW","PermA","PermB","PermC","PermF","Pmef","PmsrA","PmsrE","PtetM","PtetO","PtetW")
+data_shape <- lapply(data_all[cols], as.factor) %>% data.frame()
+
+data_shape$ID <-as.numeric(data_shape$ID)
+
+
+# Select data you wanted from the whole data table
+data_Macrolide <- data_shape %>% 
+  filter(Group_ID == 1)
+data_Nonmacrolide <- data_shape %>% 
+  filter(Group_ID == 0)
+
+
+# Summarize NMCC
+data_NMCC <- data_Nonmacrolide %>% 
+  filter(ermB == 1 | mef == 1)
+
+
+
+
+```
+

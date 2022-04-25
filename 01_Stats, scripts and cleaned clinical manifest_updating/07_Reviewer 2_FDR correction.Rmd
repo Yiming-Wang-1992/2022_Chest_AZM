@@ -1,0 +1,134 @@
+---
+title: "07_Reviewer 2_FDR correction"
+subtitle: "AZM+SERPAT"
+author: "Yiming Wang"
+date: 26/11/2021
+output: 
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Packages
+```{r library package and import data, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE}
+pacman::p_load(
+  dplyr,
+  tidyverse,
+  readxl,
+  kableExtra,
+  stats,
+  openxlsx)
+
+setwd("D:/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Windows
+# setwd("/Volumes/My backup disk/Things currently working on/AZM+SERPAT/Submission_Chest_2021") # Mac
+
+df_pvalue <- read_excel("FDR correction.xlsx")
+```
+
+# FDR correction
+## Table 2
+```{r Table 2, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+df_table2 <- df_pvalue %>% 
+  filter(Group == "Table 2")
+
+test_order_table2 = df_table2[order(df_table2$P_value),]
+
+test_order_table2$FDR =
+  p.adjust(test_order_table2$P_value,
+           method = "fdr")
+```
+
+## Table 3
+```{r Table 3, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+df_table3 <- df_pvalue %>% 
+  filter(Group == "Table 3")
+
+test_order_table3 = df_table3[order(df_table3$P_value),]
+
+test_order_table3$FDR =
+  p.adjust(test_order_table3$P_value,
+           method = "fdr")
+```
+
+## Table 4_1
+```{r Table 4_1, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+df_table4_1 <- df_pvalue %>% 
+  filter(Group == "Table 4_1")
+
+test_order_table4_1 = df_table4_1[order(df_table4_1$P_value),]
+
+test_order_table4_1$FDR =
+  p.adjust(test_order_table4_1$P_value,
+           method = "fdr")
+```
+
+## Table 4_2
+```{r Table 4_2, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+df_table4_2 <- df_pvalue %>% 
+  filter(Group == "Table 4_2")
+
+test_order_table4_2 = df_table4_2[order(df_table4_2$P_value),]
+
+test_order_table4_2$FDR =
+  p.adjust(test_order_table4_2$P_value,
+           method = "fdr")
+```
+
+## Table 5
+```{r Table 5, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+df_table5 <- df_pvalue %>% 
+  filter(Group == "Table 5")
+
+test_order_table5 = df_table5[order(df_table5$P_value),]
+
+test_order_table5$FDR =
+  p.adjust(test_order_table5$P_value,
+           method = "fdr")
+```
+
+## eTable 2_1
+```{r eTable 2_1, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+df_eTable2_1 <- df_pvalue %>% 
+  filter(Group == "eTable 2_1")
+
+test_order_eTable2_1 = df_eTable2_1[order(df_eTable2_1$P_value),]
+
+test_order_eTable2_1$FDR =
+  p.adjust(test_order_eTable2_1$P_value,
+           method = "fdr")
+```
+
+## eTable 2_2
+```{r eTable 2_2, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+df_eTable2_2 <- df_pvalue %>% 
+  filter(Group == "eTable 2_2")
+
+test_order_eTable2_2 = df_eTable2_2[order(df_eTable2_2$P_value),]
+
+test_order_eTable2_2$FDR =
+  p.adjust(test_order_eTable2_2$P_value,
+           method = "fdr")
+```
+
+# Export to excel
+```{r export to excel, echo=TRUE,message=FALSE, warning=FALSE,message=FALSE, warning=FALSE, dpi=300}
+wb <- loadWorkbook("FDR correction.xlsx")
+
+writeData(wb, test_order_table2, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 5) 
+writeData(wb, test_order_table3, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 10) 
+writeData(wb, test_order_table4_1, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 15) 
+writeData(wb, test_order_table4_2, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 20) 
+writeData(wb, test_order_table5, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 25) 
+writeData(wb, test_order_eTable2_1, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 30) 
+writeData(wb, test_order_eTable2_2, sheet = "Sheet1", rowNames = FALSE, colNames = TRUE, startRow = 1,startCol = 35) 
+
+saveWorkbook(wb, paste0("FDR correction outcome_",format(Sys.Date(),format="%d%m%y"),".xlsx"), overwrite = TRUE) # write the excel sheet to the folder
+
+```
+
+
